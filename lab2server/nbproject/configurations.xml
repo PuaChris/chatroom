@@ -65,6 +65,9 @@
         <asmTool>
           <developmentMode>5</developmentMode>
         </asmTool>
+        <linkerTool>
+          <output>${CND_DISTDIR}/${CND_CONF}/${CND_PLATFORM}/server</output>
+        </linkerTool>
       </compileType>
       <item path="server.cpp" ex="false" tool="1" flavor2="0">
       </item>

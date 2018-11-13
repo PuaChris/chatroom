@@ -17,8 +17,8 @@ CND_PACKAGE_PATH_Debug=dist/Debug/GNU-Linux/package/lab2server.tar
 # Release configuration
 CND_PLATFORM_Release=GNU-Linux
 CND_ARTIFACT_DIR_Release=dist/Release/GNU-Linux
-CND_ARTIFACT_NAME_Release=lab2server
-CND_ARTIFACT_PATH_Release=dist/Release/GNU-Linux/lab2server
+CND_ARTIFACT_NAME_Release=server
+CND_ARTIFACT_PATH_Release=dist/Release/GNU-Linux/server
 CND_PACKAGE_DIR_Release=dist/Release/GNU-Linux/package
 CND_PACKAGE_NAME_Release=lab2server.tar
 CND_PACKAGE_PATH_Release=dist/Release/GNU-Linux/package/lab2server.tar
