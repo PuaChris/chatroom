@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <string>
 #include <sstream>
+#include <iostream>
 
 #define MAX            20
 #define MAX_NAME       20
