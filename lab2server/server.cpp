@@ -42,7 +42,6 @@ enum msgType {
 };
 
 // Message structure to be serialized when sending messages
-
 struct message {
     unsigned int type;
     unsigned int size;
@@ -59,9 +58,7 @@ void sigchld_handler(int s) {
     errno = saved_errno;
 }
 
-
-// get sockaddr, IPv4 or IPv6:
-
+// Get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa) {
     if (sa->sa_family == AF_INET) {
         return &(((struct sockaddr_in*) sa)->sin_addr);
@@ -161,4 +158,3 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-

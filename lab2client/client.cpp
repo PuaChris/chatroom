@@ -52,11 +52,6 @@ enum msgType {
     QU_ACK
 };
 
-// Global variables
-bool isConnected = false;
-string buffer;
-int sockfd, numBytes;
-
 // Message structure to be serialized when sending messages
 struct message {
     unsigned int type;
@@ -65,6 +60,7 @@ struct message {
     string data;
 };
 
+// Contains connection information about the client and server
 struct connectionDetails {
     string clientID;
     string clientPassword;
@@ -73,62 +69,44 @@ struct connectionDetails {
 };
 
 
-// get sockaddr, IPv4 or IPv6:
-void *get_in_addr(struct sockaddr *sa)
-{
+// Get sockaddr, IPv4 or IPv6:
+void *get_in_addr(struct sockaddr *sa) {
     if (sa->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
+        return &(((struct sockaddr_in*) sa)->sin_addr);
     }
 
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+    return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
+// Creates connection with server and returns socket file descriptor that
+// describes the connection
+int createConnection(struct connectionDetails login) {
     
-int main(int argc, char** argv) {
-    int sockfd, numbytes;  
+    int newSockFD, numbytes;
     char buf[MAXDATASIZE];
     struct addrinfo hints, *servinfo, *p;
     int rv;
     char s[INET6_ADDRSTRLEN];
-    struct connectionDetails login;
     
-    if (argc != 1) {
-        fprintf(stderr,"usage: client\n");
-        exit(1);
-    }
-    
-    /********************** GET LOGIN/CONNECTION INFO *************************/
-    
-     cout << "Please enter login information in the following format:\n"
-             "/login <client_id> <password> <server-IP> <server-port>\n" << endl;
-    
-     // Create stringstream to extract input from user
-     string loginInput, command;
-     getline(cin, loginInput);
-     stringstream ssLogin(loginInput);
-    
-     ssLogin >> command >> login.clientID >> login.clientPassword
-             >> login.serverIP >> login.serverPort;
-
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    if ((rv = getaddrinfo(argv[1], login.serverPort.c_str(), &hints, &servinfo)) != 0) {
+    if ((rv = getaddrinfo(login.serverIP.c_str(), login.serverPort.c_str(), &hints, &servinfo)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
 
     // loop through all the results and connect to the first we can
-    for(p = servinfo; p != NULL; p = p->ai_next) {
-        if ((sockfd = socket(p->ai_family, p->ai_socktype,
+    for (p = servinfo; p != NULL; p = p->ai_next) {
+        if ((newSockFD = socket(p->ai_family, p->ai_socktype,
                 p->ai_protocol)) == -1) {
             perror("client: socket");
             continue;
         }
 
-        if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(sockfd);
+        if (connect(newSockFD, p->ai_addr, p->ai_addrlen) == -1) {
+            close(newSockFD);
             perror("client: connect");
             continue;
         }
@@ -141,30 +119,49 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
+    inet_ntop(p->ai_family, get_in_addr((struct sockaddr *) p->ai_addr),
             s, sizeof s);
     printf("client: connecting to %s\n", s);
 
     freeaddrinfo(servinfo); // all done with this structure
 
-    if ((numbytes = recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1) {
+    if ((numbytes = recv(newSockFD, buf, MAXDATASIZE - 1, 0)) == -1) {
         perror("recv");
         exit(1);
     }
 
     buf[numbytes] = '\0';
 
-    printf("client: received '%s'\n",buf);
+    printf("client: received '%s'\n", buf);
 
-    close(sockfd);
-    
-    
-    
-    
-    return 0;
+    return newSockFD;
 }
 
+int main(int argc, char** argv) {
 
+    int sockfd;
+    struct connectionDetails login;
 
+    if (argc != 1) {
+        fprintf(stderr, "usage: client\n");
+        exit(1);
+    }
 
+    /********************** GET LOGIN/CONNECTION INFO *************************/
 
+    cout << "Please enter login information in the following format:\n"
+            "/login <client_id> <password> <server-IP> <server-port>\n" << endl;
+
+    // Create stringstream to extract input from user
+    string loginInput, command;
+    getline(cin, loginInput);
+    stringstream ssLogin(loginInput);
+
+    ssLogin >> command >> login.clientID >> login.clientPassword
+            >> login.serverIP >> login.serverPort;
+
+    sockfd = createConnection(login);
+    close(sockfd);
+
+    return 0;
+}
