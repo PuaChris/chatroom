@@ -7,22 +7,23 @@
 
 #include <cstdlib>
 #include <string>
+#include <sstream>
 
-#define MAX         20
-#define MAX_NAME    20
-#define MAX_DATA    1000
-#define CMD_LOGIN "/login"
-#define CMD_LOGOUT "/logout\n"
-#define CMD_JOINSESS "/joinsession"
-#define CMD_LEAVESESS "/leavesession\n"
+#define MAX            20
+#define MAX_NAME       20
+#define MAX_DATA       1000
+#define CMD_LOGIN      "/login"
+#define CMD_LOGOUT     "/logout\n"
+#define CMD_JOINSESS   "/joinsession"
+#define CMD_LEAVESESS  "/leavesession\n"
 #define CMD_CREATESESS "/createsession"
-#define CMD_LIST "/list\n"
-#define CMD_QUIT "/quit\n"
+#define CMD_LIST       "/list\n"
+#define CMD_QUIT       "/quit\n"
 
 using namespace std;
 
 // Defines control packet types
-enum msgtyp {
+enum msgType {
     LOGIN,
     LO_ACK,
     LO_NAK,
@@ -40,7 +41,6 @@ enum msgtyp {
 
 // Global variables
 bool isConnected = false;
-string clientID;
 string buffer;
 int sockfd, numBytes;
 
@@ -52,9 +52,29 @@ struct message {
     unsigned char data[MAX_DATA];
 };
 
+struct connectionDetails {
+    string clientID;
+    string clientPassword;
+    string serverIP;
+    string serverPort;
+};
+
 
 int main(int argc, char** argv) {
 
+    struct connectionDetails login;
+    
+    cout << "Please enter login information in the following format:\n"
+            "/login <client_id> <password> <server-IP> <server-port>\n" << endl;
+    
+    // Create stringstream to extract input from user
+    string loginInput, command;
+    getline(cin, loginInput);
+    stringstream ssLogin(loginInput);
+    
+    ssLogin >> command >> login.clientID >> login.clientPassword
+            >> login.serverIP >> login.serverPort;
+    
     return 0;
 }
 
