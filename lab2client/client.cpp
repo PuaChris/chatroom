@@ -10,9 +10,6 @@
 #include <sstream>
 #include <iostream>
 
-#define MAX            20
-#define MAX_NAME       20
-#define MAX_DATA       1000
 #define CMD_LOGIN      "/login"
 #define CMD_LOGOUT     "/logout\n"
 #define CMD_JOINSESS   "/joinsession"
@@ -49,8 +46,8 @@ int sockfd, numBytes;
 struct message {
     unsigned int type;
     unsigned int size;
-    unsigned char source[MAX_NAME];
-    unsigned char data[MAX_DATA];
+    string source;
+    string data;
 };
 
 struct connectionDetails {
@@ -63,6 +60,8 @@ struct connectionDetails {
 
 int main(int argc, char** argv) {
 
+    /********************** GET LOGIN/CONNECTION INFO *************************/
+    
     struct connectionDetails login;
     
     cout << "Please enter login information in the following format:\n"
@@ -75,6 +74,9 @@ int main(int argc, char** argv) {
     
     ssLogin >> command >> login.clientID >> login.clientPassword
             >> login.serverIP >> login.serverPort;
+    
+    
+    
     
     return 0;
 }
