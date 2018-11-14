@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <signal.h>
 
 #include <arpa/inet.h>
 
@@ -78,6 +79,121 @@ void *get_in_addr(struct sockaddr *sa) {
     return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
+bool sendToServer(struct message *data, int sockfd){
+    string buffer;
+    int numBytes;
+    buffer = to_string(data->type) + " " + to_string(data->size) 
+            + " " + data->source + " " + data->data;
+    if(buffer.length() >= MAXDATASIZE)
+        return false;
+    char buf[MAXDATASIZE];
+    strncpy(buf, buffer.c_str(), MAXDATASIZE);
+    if((numBytes = send(sockfd, buf, MAXDATASIZE, 0)) == -1){
+        perror("send");
+        return false;
+    }
+    return true;
+}
+
+
+bool tryLogin(struct connectionDetails login, int sockfd){
+    char buffer[MAXDATASIZE];
+    int numBytes, response;
+    struct message info;
+    info.type = LOGIN;
+    info.source = login.clientID;
+    info.data = login.clientPassword;
+    info.size = login.clientPassword.length();
+    
+    //send login request to server
+    if(! sendToServer(&info, sockfd)){
+        return false;
+    }
+    
+    //server response
+    if((numBytes = recv(sockfd, buffer, MAXDATASIZE-1, 0)) == -1){
+        perror("recv");
+        return false;
+    }
+    buffer[numBytes] = '\0';
+    response = (int)strtol(buffer, (char**)NULL, 10);
+    if(response != LO_ACK){
+        cout<<"Login failed!"<<endl;
+        return false;
+    }
+    else
+    return true;
+    
+    
+}
+
+bool logout(struct connectionDetails login, int sockfd){
+    struct message info;
+    info.type = EXIT;
+    info.size = 0;
+    info.source = login.clientID;
+    info.data = "";
+    
+    if(sendToServer(&info, sockfd)){
+        cout<<"Logout successful!"<<endl;
+        return true;
+    }
+    
+    //NOT SURE IF WE NEED TO CHECK SERVER RESPONSE HERE
+    
+    return false;
+}
+
+void print_list(string buffer){
+    string temp_buf = buffer;
+    string token;
+    string delimiter = " ";
+    size_t pos = 0;
+    while((pos = temp_buf.find(delimiter)) != std::string::npos){
+        token = temp_buf.substr(0, temp_buf.find(delimiter));
+        cout<<token<<", ";
+        temp_buf.erase(0, temp_buf.find(delimiter) + delimiter.length());
+    }
+    cout<<endl;
+}
+
+bool list(struct connectionDetails login, int sockfd){
+    int numBytes, response;
+    string buffer;
+    string delimiter = " ";
+    struct message info;
+    info.type = QUERY;
+    info.size = 0;
+    info.source = "";
+    info.data = "";
+    
+    if(! sendToServer(&info, sockfd)){
+        cout<<"list not found!"<<endl;
+        return false;
+    }
+    
+    //check response from server
+    char buf[MAXDATASIZE];
+    strncpy(buf, buffer.c_str(), MAXDATASIZE);
+    if((numBytes = recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1){
+        perror("recv");
+        return false;
+    }
+    
+    buffer[numBytes] = '\0';
+    response = stoi(buffer.substr(0, buffer.find(delimiter)));
+    if(response != QU_ACK){
+        cout<<"No list found!"<<endl;
+        return false;
+    }
+    else {
+        buffer.erase(0, buffer.find(delimiter) + delimiter.length());
+        print_list(buffer);
+        return true;
+    }
+}
+
+
 // Creates connection with server and returns socket file descriptor that
 // describes the connection
 int createConnection(struct connectionDetails login) {
@@ -88,13 +204,18 @@ int createConnection(struct connectionDetails login) {
     int rv;
     char s[INET6_ADDRSTRLEN];
     
+    if(login.clientID.empty() == true || login.clientPassword.empty() == true 
+            || login.serverIP.empty() == true || login.serverPort.empty() == true){
+        cout<<"Invalid login info!"<<endl;
+    }
+    
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
     if ((rv = getaddrinfo(login.serverIP.c_str(), login.serverPort.c_str(), &hints, &servinfo)) != 0) {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return 1;
+        return -1;
     }
 
     // loop through all the results and connect to the first we can
@@ -116,7 +237,7 @@ int createConnection(struct connectionDetails login) {
 
     if (p == NULL) {
         fprintf(stderr, "client: failed to connect\n");
-        return 2;
+        return -1;
     }
 
     inet_ntop(p->ai_family, get_in_addr((struct sockaddr *) p->ai_addr),
@@ -161,6 +282,11 @@ int main(int argc, char** argv) {
             >> login.serverIP >> login.serverPort;
 
     sockfd = createConnection(login);
+    if(sockfd != -1){
+        if(tryLogin(login, sockfd))
+            cout<<"Login successful!"<<endl;
+    }
+        
     close(sockfd);
 
     return 0;

@@ -7,7 +7,8 @@
 
 #include <cstdlib>
 #include <string>
-#include <stdio.h>
+#include <iostream>
+#include <fstream>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
@@ -21,6 +22,7 @@
 #include <signal.h>
 
 #define BACKLOG 10     // How many pending connections queue will hold
+#define MAXDATASIZE 100 // max number of bytes we can get at once 
 
 using namespace std;
 
@@ -49,6 +51,30 @@ struct message {
     string data;
 };
 
+typedef struct str_node {
+    char *str;
+    struct str_node *next;
+} str_node;
+
+typedef struct client_node {
+    char id[20];
+    str_node *joined_sess;
+    int socket;
+    struct client_node *next;
+} client_node;
+
+typedef struct sess_node {
+    char id[20];
+    str_node *joined_clients;
+    struct sess_node *next;
+} sess_node;
+
+typedef struct server_db {
+    client_node *client_list;
+    sess_node *sess_list;
+} server_db;
+
+
 void sigchld_handler(int s) {
     // waitpid() might overwrite errno, so we save and restore it:
     int saved_errno = errno;
@@ -67,11 +93,18 @@ void *get_in_addr(struct sockaddr *sa) {
     return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
+void remove_socket(server_db *db, int socket){
+    
+}
+
+void parser(string buffer, struct message *msg){
+    
+}
+
 int main(int argc, char** argv) {
 
     int sockfd, new_fd; // listen on sock_fd, new connection on new_fd
     struct addrinfo hints, *servinfo, *p;
-    struct sockaddr_storage their_addr; // connector's address information
     socklen_t sin_size;
     struct sigaction sa;
     int yes = 1;
@@ -133,18 +166,97 @@ int main(int argc, char** argv) {
 
     printf("server: waiting for connections...\n");
     
+    fd_set master;
+    fd_set read_fds;
+    int fdmax;
+    
+    FD_SET(sockfd, &master);
+    
+    server_db db;
+    fdmax = sockfd;
+    
     while(1) {  // main accept() loop
-        sin_size = sizeof their_addr;
-        new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
-        if (new_fd == -1) {
-            perror("accept");
-            continue;
+        
+        read_fds = master;
+        if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
+            perror("select");
+            exit(4);
         }
+        for (int i = 0; i <= fdmax; i++) {
+            if (FD_ISSET(i, &read_fds)) {
+                if (i == sockfd) {
+                    struct sockaddr_storage their_addr; // connector's address information
+                    sin_size = sizeof their_addr;
+                    new_fd = accept(sockfd, (struct sockaddr *) &their_addr, &sin_size);
+                    if (new_fd == -1) {
+                        perror("accept");
+                        continue;
+                    } else {
 
-        inet_ntop(their_addr.ss_family,
-            get_in_addr((struct sockaddr *)&their_addr),
-            s, sizeof s);
-        printf("server: got connection from %s\n", s);
+                        FD_SET(new_fd, &master);
+                        if (new_fd > fdmax)
+                            fdmax = new_fd;
+                        inet_ntop(their_addr.ss_family,
+                                get_in_addr((struct sockaddr *) &their_addr),
+                                s, sizeof s);
+                        printf("server: got connection from %s\n", s);
+                    }
+                }
+                else {
+
+                    //response based on client's request
+                    int numBytes;
+                    string buffer;
+                    
+                    char buf[MAXDATASIZE];
+//                    strncpy(buf, buffer.c_str(), MAXDATASIZE); 
+                    if((numBytes = recv(i, buf, MAXDATASIZE, 0)) == -1){
+                        perror("recv");
+                        remove_socket(&db, i);
+                        close(i);
+                        FD_CLR(i, &master);
+                    }
+                    else{
+                        buf[numBytes] = '\0';
+                        buffer = buf;
+                        struct message msg;
+                        string clientID, password;
+                        parser(buffer, &msg);
+                        
+                        if(msg.type == LOGIN){
+                            cout<<"Verifying login information!"<<endl;
+                            
+                            ifstream file;
+                            file.open("data.txt");
+                            if(file.is_open()){
+                                while(! file.eof()){
+                                    file>>clientID>>password;
+                                    if(msg.source == clientID && msg.data == password){
+                                        memset(buf, 0, MAXDATASIZE);
+                                        strncpy(buf, std::to_string(LO_ACK).c_str(), MAXDATASIZE);
+                                        send(i, buf, std::to_string(LO_ACK).length(), 0);
+                                        cout<<"Successfully logged in"<<endl;
+                                    }
+                                }
+                                memset(buf, 0, MAXDATASIZE);
+                                strncpy(buf, std::to_string(LO_NAK).c_str(), MAXDATASIZE);
+                                send(i, buf, std::to_string(LO_NAK).length(), 0);
+                                cout<<"Login failed"<<endl;
+                            }
+                        }
+                        else if (msg.type == EXIT) {
+                            remove_socket(&db, i);
+                            close(i);
+                            FD_CLR(i, &master);
+                        }
+                        else if(msg.type == QUERY){
+                            
+                        }
+                    }
+                }
+            }
+        }
+        
 
         if (!fork()) { // this is the child process
             close(sockfd); // child doesn't need the listener
