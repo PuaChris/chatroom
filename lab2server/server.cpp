@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <string>
+#include <sstream>
 #include <iostream>
 #include <fstream>
 #include <stdlib.h>
@@ -51,29 +52,6 @@ struct message {
     string data;
 };
 
-typedef struct str_node {
-    char *str;
-    struct str_node *next;
-} str_node;
-
-typedef struct client_node {
-    char id[20];
-    str_node *joined_sess;
-    int socket;
-    struct client_node *next;
-} client_node;
-
-typedef struct sess_node {
-    char id[20];
-    str_node *joined_clients;
-    struct sess_node *next;
-} sess_node;
-
-typedef struct server_db {
-    client_node *client_list;
-    sess_node *sess_list;
-} server_db;
-
 
 void sigchld_handler(int s) {
     // waitpid() might overwrite errno, so we save and restore it:
@@ -93,11 +71,24 @@ void *get_in_addr(struct sockaddr *sa) {
     return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
-void remove_socket(server_db *db, int socket){
+//this parser is only for login
+void login_parser(string buffer, struct message *msg){
     
-}
-
-void parser(string buffer, struct message *msg){
+    stringstream ss(buffer);
+    string temp;
+    ss>>temp;
+    if(std::stoi(temp) == 0){
+        msg->type = LOGIN;
+        temp.clear();
+        ss>>temp;
+        msg->size = std::stoi(temp);
+        temp.clear();
+        ss>>temp;
+        msg->source = temp;
+        temp.clear();
+        ss>>temp;
+        msg->data = temp;
+    }
     
 }
 
@@ -110,6 +101,10 @@ int main(int argc, char** argv) {
     int yes = 1;
     char s[INET6_ADDRSTRLEN];
     int rv;
+    struct sockaddr_storage their_addr; // connector's address information
+    
+    //Checking for any child processes going on
+    pid_t childpid;
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
@@ -121,7 +116,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // loop through all the results and bind to the first we can
+    // loop through all the results and bind to the first we can (from Beej)
     for (p = servinfo; p != NULL; p = p->ai_next) {
         if ((sockfd = socket(p->ai_family, p->ai_socktype,
                 p->ai_protocol)) == -1) {
@@ -156,6 +151,7 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
+    //reapping zombie processes that appear as the fork()ed child processes exit (from Beej)
     sa.sa_handler = sigchld_handler; // reap all dead processes
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
@@ -166,107 +162,100 @@ int main(int argc, char** argv) {
 
     printf("server: waiting for connections...\n");
     
-    fd_set master;
-    fd_set read_fds;
-    int fdmax;
-    
-    FD_SET(sockfd, &master);
-    
-    server_db db;
-    fdmax = sockfd;
-    
-    while(1) {  // main accept() loop
-        
-        read_fds = master;
-        if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
-            perror("select");
-            exit(4);
+    //waiting for requests from client to process accordingly (from beej)
+    while (1) { //main access loop
+        sin_size = sizeof their_addr;
+        new_fd = accept(sockfd, (struct sockaddr *) &their_addr, &sin_size);
+        if (new_fd == -1) {
+            perror("accept");
+            continue;
         }
-        for (int i = 0; i <= fdmax; i++) {
-            if (FD_ISSET(i, &read_fds)) {
-                if (i == sockfd) {
-                    struct sockaddr_storage their_addr; // connector's address information
-                    sin_size = sizeof their_addr;
-                    new_fd = accept(sockfd, (struct sockaddr *) &their_addr, &sin_size);
-                    if (new_fd == -1) {
-                        perror("accept");
-                        continue;
-                    } else {
+        //Retrieves IP address from the client that is currently being connected to
+        inet_ntop(their_addr.ss_family,
+                get_in_addr((struct sockaddr *) &their_addr),
+                s, sizeof s);
+        printf("server: got connection from %s\n", s);
+//        if (!fork()) {
+//            close(sockfd);
+//        }
+        
+        //If there's no child processes
+        if((childpid = fork()) == 0){
+            close(sockfd);
+        }
+        
+        //handles client's valid requests
+        //right now only recognizes login, logout, quit and list
+        while (1) {
+            int numBytes;
+            string buffer;
+            char buf[MAXDATASIZE];
+            //if invalid data received from client
+            if ((numBytes = recv(new_fd, buf, MAXDATASIZE, 0)) == -1) {
+                perror("recv");
+            } else {
+                buf[numBytes] = '\0';
+                buffer = buf;
+                struct message msg;
+                string clientID, password;
+                //parses login command and populates struct message msg with login information
+                login_parser(buffer, &msg);
 
-                        FD_SET(new_fd, &master);
-                        if (new_fd > fdmax)
-                            fdmax = new_fd;
-                        inet_ntop(their_addr.ss_family,
-                                get_in_addr((struct sockaddr *) &their_addr),
-                                s, sizeof s);
-                        printf("server: got connection from %s\n", s);
-                    }
-                }
-                else {
-
-                    //response based on client's request
-                    int numBytes;
-                    string buffer;
+                if (msg.type == LOGIN) {
+                    cout << "Verifying login information!" << endl;
                     
-                    char buf[MAXDATASIZE];
-//                    strncpy(buf, buffer.c_str(), MAXDATASIZE); 
-                    if((numBytes = recv(i, buf, MAXDATASIZE, 0)) == -1){
-                        perror("recv");
-                        remove_socket(&db, i);
-                        close(i);
-                        FD_CLR(i, &master);
-                    }
-                    else{
-                        buf[numBytes] = '\0';
-                        buffer = buf;
-                        struct message msg;
-                        string clientID, password;
-                        parser(buffer, &msg);
-                        
-                        if(msg.type == LOGIN){
-                            cout<<"Verifying login information!"<<endl;
-                            
-                            ifstream file;
-                            file.open("data.txt");
-                            if(file.is_open()){
-                                while(! file.eof()){
-                                    file>>clientID>>password;
-                                    if(msg.source == clientID && msg.data == password){
-                                        memset(buf, 0, MAXDATASIZE);
-                                        strncpy(buf, std::to_string(LO_ACK).c_str(), MAXDATASIZE);
-                                        send(i, buf, std::to_string(LO_ACK).length(), 0);
-                                        cout<<"Successfully logged in"<<endl;
-                                    }
-                                }
+                    //opening file which contains all clients login information
+                    fstream file;
+                    file.open("data.txt");
+                    
+                    //if file is opened
+                    if (file.is_open()) {
+                        //variable which changes to true in case of successful login
+                        bool login = false;
+                        //matching login information with the exisitng text file
+                        //right now the login process works only if the user provides clientID and password 
+                        //that match with the file the contains users login information
+                        while (!file.eof()) {
+                            file >> clientID>>password;
+                            //if matched
+                            if (msg.source == clientID && msg.data == password) {
                                 memset(buf, 0, MAXDATASIZE);
-                                strncpy(buf, std::to_string(LO_NAK).c_str(), MAXDATASIZE);
-                                send(i, buf, std::to_string(LO_NAK).length(), 0);
-                                cout<<"Login failed"<<endl;
+                                strncpy(buf, std::to_string(LO_ACK).c_str(), MAXDATASIZE);
+                                send(new_fd, buf, std::to_string(LO_ACK).length(), 0);
+                                cout << "Successfully logged in" << endl;
+                                login = true;
+                                //copy zeroes into string buf
+                                bzero(buf, sizeof(buf));
+                                break;
                             }
                         }
-                        else if (msg.type == EXIT) {
-                            remove_socket(&db, i);
-                            close(i);
-                            FD_CLR(i, &master);
+                        //if user provided login information didn't match
+                        if (login == false) {
+                            memset(buf, 0, MAXDATASIZE);
+                            strncpy(buf, std::to_string(LO_NAK).c_str(), MAXDATASIZE);
+                            send(new_fd, buf, std::to_string(LO_NAK).length(), 0);
+                            bzero(buf, sizeof(buf));
+                            cout << "Login failed" << endl;
                         }
-                        else if(msg.type == QUERY){
-                            
-                        }
+                        break;
+                    } 
+                    else{
+                        cout << "Unable to verify login information" << endl;
+                        break;
                     }
+                }
+                //parser doesn't handle quit, logout or list now, so this conditions will never be true
+                else if (msg.type == EXIT) {
+                    close(new_fd);
+                } 
+                else if (msg.type == QUERY) {
+
                 }
             }
         }
-        
 
-        if (!fork()) { // this is the child process
-            close(sockfd); // child doesn't need the listener
-            if (send(new_fd, "Hello, world!", 13, 0) == -1)
-                perror("send");
-            close(new_fd);
-            exit(0);
-        }
-        close(new_fd);  // parent doesn't need this
     }
+    
 
     return 0;
 }
