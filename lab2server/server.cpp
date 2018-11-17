@@ -22,13 +22,18 @@
 #include <sys/wait.h>
 #include <signal.h>
 
-#define BACKLOG 10     // How many pending connections queue will hold
-#define MAXDATASIZE 100 // max number of bytes we can get at once 
+// Inserted into data when sending the list of clients and sessions to a client
+#define CLIENT_LIST_STRING "Clients Online:"
+#define SESSION_LIST_STRING "Available Clients:"
+
+#define BACKLOG 10       // How many pending connections queue will hold
+#define MAXDATASIZE 1380 // Max number of bytes we can get at once 
 
 using namespace std;
 
 // Defines control packet types
-enum msgType {
+enum msgType
+{
     LOGIN,
     LO_ACK,
     LO_NAK,
@@ -44,8 +49,10 @@ enum msgType {
     QU_ACK
 };
 
+
 // Message structure to be serialized when sending messages
-struct message {
+struct message
+{
     unsigned int type;
     unsigned int size;
     string source;
@@ -53,17 +60,9 @@ struct message {
 };
 
 
-void sigchld_handler(int s) {
-    // waitpid() might overwrite errno, so we save and restore it:
-    int saved_errno = errno;
-
-    while (waitpid(-1, NULL, WNOHANG) > 0);
-
-    errno = saved_errno;
-}
-
 // Get sockaddr, IPv4 or IPv6:
-void *get_in_addr(struct sockaddr *sa) {
+void *get_in_addr(struct sockaddr *sa)
+{
     if (sa->sa_family == AF_INET) {
         return &(((struct sockaddr_in*) sa)->sin_addr);
     }
@@ -71,191 +70,196 @@ void *get_in_addr(struct sockaddr *sa) {
     return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
-//this parser is only for login
-void login_parser(string buffer, struct message *msg){
-    
-    stringstream ss(buffer);
-    string temp;
-    ss>>temp;
-    if(std::stoi(temp) == 0){
-        msg->type = LOGIN;
-        temp.clear();
-        ss>>temp;
-        msg->size = std::stoi(temp);
-        temp.clear();
-        ss>>temp;
-        msg->source = temp;
-        temp.clear();
-        ss>>temp;
-        msg->data = temp;
-    }
-    
+
+
+// Create a packet string from a message structure
+string stringifyMessage(const struct message* data)
+{
+    string dataStr = to_string(data->type) + " " + to_string(data->size) 
+                     + " " + data->source + " " + data->data;
+    return dataStr;
 }
 
-int main(int argc, char** argv) {
 
-    int sockfd, new_fd; // listen on sock_fd, new connection on new_fd
-    struct addrinfo hints, *servinfo, *p;
-    socklen_t sin_size;
-    struct sigaction sa;
-    int yes = 1;
-    char s[INET6_ADDRSTRLEN];
+// Sends a message to client in the following format:
+//   message = "<type> <data_size> <source> <data>"
+// Returns true if message is successfully sent
+bool sendToClient(struct message *data, int sockfd)
+{
+    int numBytes;
+    string dataStr = stringifyMessage(data);
+
+    if(dataStr.length() > MAXDATASIZE) return false;
+    if((numBytes = send(sockfd, dataStr.c_str(), dataStr.length(), 0)) == -1)
+    {
+        perror("send");
+        return false;
+    }
+    return true;
+}
+
+
+// Creates socket that listens for new connections and returns the file descriptor
+int createListenerSocket(const char* portNum)
+{
+    int listener;     // listening socket descriptor
+    int yes=1;        // for setsockopt() SO_REUSEADDR, below
     int rv;
-    struct sockaddr_storage their_addr; // connector's address information
     
-    //Checking for any child processes going on
-    pid_t childpid;
-
+    struct addrinfo hints, *ai, *p;
+    
+    // get us a socket and bind it
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE; // use my IP
-
-    if ((rv = getaddrinfo(NULL, argv[1], &hints, &servinfo)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return 1;
+    hints.ai_flags = AI_PASSIVE;
+    
+    if ((rv = getaddrinfo(NULL, portNum, &hints, &ai)) != 0)
+    {
+        fprintf(stderr, "server: %s\n", gai_strerror(rv));
+        exit(1);
     }
+    
+    for(p = ai; p != NULL; p = p->ai_next)
+    {
+        listener = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (listener < 0) continue;
+        
+        // lose the pesky "address already in use" error message
+        setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
 
-    // loop through all the results and bind to the first we can (from Beej)
-    for (p = servinfo; p != NULL; p = p->ai_next) {
-        if ((sockfd = socket(p->ai_family, p->ai_socktype,
-                p->ai_protocol)) == -1) {
-            perror("server: socket");
-            continue;
-        }
-
-        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes,
-                sizeof (int)) == -1) {
-            perror("setsockopt");
-            exit(1);
-        }
-
-        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(sockfd);
-            perror("server: bind");
+        if (bind(listener, p->ai_addr, p->ai_addrlen) < 0)
+        {
+            close(listener);
             continue;
         }
 
         break;
     }
 
-    freeaddrinfo(servinfo); // all done with this structure
-
+    // if we got here, it means we didn't get bound
     if (p == NULL) {
-        fprintf(stderr, "server: failed to bind\n");
-        exit(1);
+        fprintf(stderr, "selectserver: failed to bind\n");
+        exit(2);
     }
 
-    if (listen(sockfd, BACKLOG) == -1) {
+    freeaddrinfo(ai); // all done with this
+
+    // listen
+    if (listen(listener, BACKLOG) == -1) {
         perror("listen");
-        exit(1);
+        exit(3);
     }
-
-    //reapping zombie processes that appear as the fork()ed child processes exit (from Beej)
-    sa.sa_handler = sigchld_handler; // reap all dead processes
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-        perror("sigaction");
-        exit(1);
-    }
-
-    printf("server: waiting for connections...\n");
     
-    //waiting for requests from client to process accordingly (from beej)
-    while (1) { //main access loop
-        sin_size = sizeof their_addr;
-        new_fd = accept(sockfd, (struct sockaddr *) &their_addr, &sin_size);
-        if (new_fd == -1) {
-            perror("accept");
-            continue;
-        }
-        //Retrieves IP address from the client that is currently being connected to
-        inet_ntop(their_addr.ss_family,
-                get_in_addr((struct sockaddr *) &their_addr),
-                s, sizeof s);
-        printf("server: got connection from %s\n", s);
-//        if (!fork()) {
-//            close(sockfd);
-//        }
-        
-        //If there's no child processes
-        if((childpid = fork()) == 0){
-            close(sockfd);
-        }
-        
-        //handles client's valid requests
-        //right now only recognizes login, logout, quit and list
-        while (1) {
-            int numBytes;
-            string buffer;
-            char buf[MAXDATASIZE];
-            //if invalid data received from client
-            if ((numBytes = recv(new_fd, buf, MAXDATASIZE, 0)) == -1) {
-                perror("recv");
-            } else {
-                buf[numBytes] = '\0';
-                buffer = buf;
-                struct message msg;
-                string clientID, password;
-                //parses login command and populates struct message msg with login information
-                login_parser(buffer, &msg);
+    return listener;
+}
 
-                if (msg.type == LOGIN) {
-                    cout << "Verifying login information!" << endl;
-                    
-                    //opening file which contains all clients login information
-                    fstream file;
-                    file.open("data.txt");
-                    
-                    //if file is opened
-                    if (file.is_open()) {
-                        //variable which changes to true in case of successful login
-                        bool login = false;
-                        //matching login information with the exisitng text file
-                        //right now the login process works only if the user provides clientID and password 
-                        //that match with the file the contains users login information
-                        while (!file.eof()) {
-                            file >> clientID>>password;
-                            //if matched
-                            if (msg.source == clientID && msg.data == password) {
-                                memset(buf, 0, MAXDATASIZE);
-                                strncpy(buf, std::to_string(LO_ACK).c_str(), MAXDATASIZE);
-                                send(new_fd, buf, std::to_string(LO_ACK).length(), 0);
-                                cout << "Successfully logged in" << endl;
-                                login = true;
-                                //copy zeroes into string buf
-                                bzero(buf, sizeof(buf));
-                                break;
-                            }
-                        }
-                        //if user provided login information didn't match
-                        if (login == false) {
-                            memset(buf, 0, MAXDATASIZE);
-                            strncpy(buf, std::to_string(LO_NAK).c_str(), MAXDATASIZE);
-                            send(new_fd, buf, std::to_string(LO_NAK).length(), 0);
-                            bzero(buf, sizeof(buf));
-                            cout << "Login failed" << endl;
-                        }
-                        break;
-                    } 
-                    else{
-                        cout << "Unable to verify login information" << endl;
-                        break;
+
+// Send an acknowledge to a client if their login is successful
+void acknowledgeLogin(int sockfd)
+{
+    struct message loginAck;
+    loginAck.type = LO_ACK;
+    loginAck.size = 0;
+    loginAck.source = "SERVER";
+    loginAck.data = "";
+    
+    sendToClient(&loginAck, sockfd);
+}
+
+
+int main(int argc, char** argv) {
+
+    fd_set master;    // Master file descriptor list
+    fd_set read_fds;  // Temp file descriptor list for select()
+    int fdmax;        // Maximum file descriptor number
+
+    char buf[MAXDATASIZE];    // Buffer for client data
+    char remoteIP[INET6_ADDRSTRLEN];
+
+    int listener = createListenerSocket(argv[1]);
+    
+    // Clear the master and temp sets and add the listener socket to master
+    FD_ZERO(&master);
+    FD_ZERO(&read_fds);
+    FD_SET(listener, &master);
+
+    // Keep track of the biggest file descriptor
+    fdmax = listener;
+
+    // Main loop
+    while(1)
+    {
+        read_fds = master; // copy master list
+        if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1)
+        {
+            perror("select");
+            exit(4);
+        }
+
+        // Run through the existing connections looking for data to read
+        for(int i = 0; i <= fdmax; i++)
+        {
+            if (FD_ISSET(i, &read_fds)) // Part of the tracked sockets
+            { 
+                if (i == listener) // Handle new connections
+                {
+                    struct sockaddr_storage remoteaddr; // client address
+                    socklen_t addrlen = sizeof(remoteaddr);
+                    int newfd = accept(listener, (struct sockaddr *)&remoteaddr, &addrlen);
+
+                    if (newfd == -1) perror("accept");
+                    else
+                    {
+                        FD_SET(newfd, &master); // add to master set
+                        if (newfd > fdmax) fdmax = newfd;
+                        
+                        acknowledgeLogin(newfd);
+                        
+                        printf("server: new connection from %s on socket %d\n",
+                            inet_ntop(remoteaddr.ss_family,
+                                get_in_addr((struct sockaddr*)&remoteaddr),
+                                remoteIP, INET6_ADDRSTRLEN),
+                            newfd);
                     }
                 }
-                //parser doesn't handle quit, logout or list now, so this conditions will never be true
-                else if (msg.type == EXIT) {
-                    close(new_fd);
-                } 
-                else if (msg.type == QUERY) {
-
-                }
-            }
-        }
-
-    }
-    
+                
+                else // Handle data from a client
+                {
+                    int nbytes;
+                    if ((nbytes = recv(i, buf, sizeof(buf), 0)) <= 0)
+                    {
+                        // Got error or connection closed by client
+                        if (nbytes == 0) // Connection closed
+                        {
+                            printf("server: socket %d hung up\n", i);
+                        }
+                        else perror("recv");
+                        
+                        close(i);
+                        FD_CLR(i, &master); // remove from master set
+                    }
+                    
+                    else // We got some data from a client
+                    {
+//                        for(int j = 0; j <= fdmax; j++) // Send to everyone!
+//                        {
+//                            if (FD_ISSET(j, &master)) // Except the listener and ourselves
+//                            {
+//                                if (j != listener && j != i)
+//                                {
+//                                    if (send(j, buf, nbytes, 0) == -1)
+//                                    {
+//                                        perror("send");
+//                                    }
+//                                }
+//                            }
+//                        }
+                    }
+                } // END handle data from client
+            } // END got new incoming connection
+        } // END looping through file descriptors
+    } // END while
 
     return 0;
 }

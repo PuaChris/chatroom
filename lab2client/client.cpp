@@ -5,6 +5,17 @@
  * Created on November 12, 2018, 8:46 PM
  */
 
+
+/* TODO
+ *
+ * - Disconnect clients when server closes
+ * - Work on logging out
+ * - Work on quit whether or not the user is logged in
+ * - Double logging in
+ * - Parsing issues (e.g. incorrect number of arguments)
+ * 
+ */
+
 #include <cstdlib>
 #include <string>
 #include <sstream>
@@ -19,7 +30,6 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <signal.h>
-
 #include <arpa/inet.h>
 
 #define CMD_LOGIN      "/login"
@@ -30,9 +40,11 @@
 #define CMD_LIST       "/list\n"
 #define CMD_QUIT       "/quit\n"
 
-#define PORT "3490" // the port client will be connecting to 
+// Inserted into data when sending the list of clients and sessions to a client
+#define CLIENT_LIST_STRING "Clients Online:"
+#define SESSION_LIST_STRING "Available Clients:"
 
-#define MAXDATASIZE 100 // max number of bytes we can get at once 
+#define MAXDATASIZE 1380 // max number of bytes we can get at once
 
 using namespace std;
 
@@ -53,13 +65,16 @@ enum msgType {
     QU_ACK
 };
 
+
 // Message structure to be serialized when sending messages
+// Note: when message is stringified, the delimiter between fields is " "
 struct message {
     unsigned int type;
     unsigned int size;
     string source;
     string data;
 };
+
 
 // Contains connection information about the client and server
 struct connectionDetails {
@@ -79,129 +94,145 @@ void *get_in_addr(struct sockaddr *sa) {
     return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
-//this function sends a string(buffer) to server which holds struct message information
-//in the following format: buffer = "type sizeof(data) source data"
-//if sending to server is successful this function returns true otherwise returns false
-bool sendToServer(struct message *data, int sockfd){
-    string buffer;
+
+// Create a packet string from a message structure
+string stringifyMessage(const struct message* data)
+{
+    string dataStr = to_string(data->type) + " " + to_string(data->size) 
+                     + " " + data->source + " " + data->data;
+    return dataStr;
+}
+
+
+// Sends a message to server in the following format:
+//   message = "<type> <data_size> <source> <data>"
+// Returns true if message is successfully sent
+bool sendToServer(struct message *data, int sockfd)
+{
     int numBytes;
-    buffer = to_string(data->type) + " " + to_string(data->size) 
-            + " " + data->source + " " + data->data;
-    if(buffer.length() >= MAXDATASIZE)
-        return false;
-    char buf[MAXDATASIZE];
-    strncpy(buf, buffer.c_str(), MAXDATASIZE);
-    if((numBytes = send(sockfd, buf, MAXDATASIZE, 0)) == -1){
+    string dataStr = stringifyMessage(data);
+
+    if(dataStr.length() > MAXDATASIZE) return false;
+    if((numBytes = send(sockfd, dataStr.c_str(), dataStr.length(), 0)) == -1)
+    {
         perror("send");
         return false;
     }
     return true;
 }
 
-//this function populates struct connectionDetails login with client's information and
-//calls sendToServer() which sends the client's login information to the server
-//this function also checks server response for login, if login is successful it returns true else false
-bool tryLogin(struct connectionDetails login, int sockfd){
+
+// Sends login info to server and checks server's response
+// Returns true if login is successful
+bool requestLogin(struct connectionDetails login, int sockfd)
+{
     char buffer[MAXDATASIZE];
     int numBytes, response;
     struct message info;
     info.type = LOGIN;
+    info.size = login.clientPassword.length();
     info.source = login.clientID;
     info.data = login.clientPassword;
-    info.size = login.clientPassword.length();
     
-    //sends login request to server
-    if(! sendToServer(&info, sockfd)){
+    // Sends login request to server
+    if(!sendToServer(&info, sockfd)){
         return false;
     }
     
-    //server response
-    if((numBytes = recv(sockfd, buffer, MAXDATASIZE-1, 0)) == -1){
+    // Server response
+    if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
+    {
         perror("recv");
         return false;
     }
-    buffer[numBytes] = '\0';
-    response = (int)strtol(buffer, (char**)NULL, 10);
-    if(response != LO_ACK){
-        cout<<"Login failed!"<<endl;
+    
+    // Checking packet type
+    string s(buffer);
+    stringstream ss(s);
+    ss >> response;
+    
+    if(response != LO_ACK)
+    {
+        cout << "Login failed!" << endl;
         return false;
     }
-    else
     return true;
 }
-//this function sends the logout request to the server to exit the server
-void logout(struct connectionDetails login, int sockfd){
+
+
+// Sends the logout request to the server
+void logout(struct connectionDetails login, int sockfd)
+{
     struct message info;
     info.type = EXIT;
     info.size = 0;
     info.source = login.clientID;
     info.data = "";
     
-    if(sendToServer(&info, sockfd)){
-        cout<<"Logout successful!"<<endl;
-    }
-    
-    //NOT SURE IF WE NEED TO CHECK SERVER RESPONSE HERE
-    
+    if(sendToServer(&info, sockfd)) cout << "Logout successful!" << endl;
 }
 
-//This prints out a list of connected clients and available sessions from server 
-void print_list(string buffer){
-    string token;
-    string delimiter = " ";
-    
-    //prints each word from the list
-    //should be modified after implementing sessions
-    //right now the string expects just a list of active clients
-    size_t pos = 0;
-    while((pos = buffer.find(delimiter)) != std::string::npos){
-        token = buffer.substr(0, buffer.find(delimiter));
-        cout<<token<<", ";
-        buffer.erase(0, buffer.find(delimiter) + delimiter.length());
+
+// This prints out a list of connected clients and available sessions from server 
+void printClientSessionList(string buffer)
+{
+    // Get rid of type, data_size, and source, leaving just the list of clients and sessions
+    stringstream ss(buffer);
+    string temp;
+    ss >> temp >> temp >> temp;
+
+    // Printing list of clients and sessions
+    string data;
+    while(ss >> data)
+    {
+        if(data == SESSION_LIST_STRING || data == CLIENT_LIST_STRING) cout << endl;
+        cout << data << endl;
     }
-    cout<<endl;
+    cout << endl;
 }
 
-//this function sends the list request to client to print the list of
-//connected clients and available sessions
-//if the server sends the list this function returns true oyherwise returns false
-//this function expects a list of connected clients and available sessions from server in the following string format:
-//QU_ACK (list of connected clients and available sessions)"
-bool list(struct connectionDetails login, int sockfd){
+
+// Sends a request to return the list of active clients and available sessions
+// Returns true if the list is successfully received
+bool requestClientSessionList(struct connectionDetails login, int sockfd)
+{
     int numBytes, response;
-    string buffer;
-    string delimiter = " ";
+    char buffer[MAXDATASIZE];
+    
+    // Prepare message
     struct message info;
     info.type = QUERY;
     info.size = 0;
-    info.source = "";
+    info.source = login.clientID;
     info.data = "";
     
-    if(! sendToServer(&info, sockfd)){
-        cout<<"list not found!"<<endl;
+    if(!sendToServer(&info, sockfd)){
+        cout << "List unavailable!" << endl;
         return false;
     }
     
-    //check response from server
-    char buf[MAXDATASIZE];
-    strncpy(buf, buffer.c_str(), MAXDATASIZE);
-    if((numBytes = recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1){
+    // Server response
+    if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
+    {
         perror("recv");
         return false;
     }
     
-    buffer[numBytes] = '\0';
-    response = stoi(buffer.substr(0, buffer.find(delimiter)));
-    //if the server doesn't send QU_ACK at the begining of the returned string
-    if(response != QU_ACK){
-        cout<<"No list found!"<<endl;
+    // Checking packet type
+    string s(buffer);
+    stringstream ss(s);
+    ss >> response;
+    
+    if(response != QU_ACK)
+    {
+        cout << "Login failed!" << endl;
         return false;
     }
-    else {
-        //removing QU_ACK from the string received from server so that the string contains the list only
-        buffer.erase(0, buffer.find(delimiter) + delimiter.length());
-        //passing new string with removed QU_ACK to print_list to print the whole list
-        print_list(buffer);
+    
+    // List received, print clients and sessions
+    else
+    {
+        printClientSessionList(s);
         return true;
     }
 }
@@ -211,44 +242,47 @@ bool list(struct connectionDetails login, int sockfd){
 // describes the connection
 int createConnection(struct connectionDetails login) {
     
-    int newSockFD, numbytes;
-    char buf[MAXDATASIZE];
+    int newSockFD, rv;
     struct addrinfo hints, *servinfo, *p;
-    int rv;
     char s[INET6_ADDRSTRLEN];
-    //if invalid/incomplete login information provided
-    if(login.clientID.empty() == true || login.clientPassword.empty() == true 
-            || login.serverIP.empty() == true || login.serverPort.empty() == true){
-        cout<<"Invalid login info!"<<endl;
+    
+    // If invalid/incomplete login information provided
+    if(login.clientID.empty() == true || login.clientPassword.empty() == true ||
+       login.serverIP.empty() == true || login.serverPort.empty() == true)
+    {
+        cout << "Invalid login info!" << endl;
     }
     
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    if ((rv = getaddrinfo(login.serverIP.c_str(), login.serverPort.c_str(), &hints, &servinfo)) != 0) {
+    if ((rv = getaddrinfo(login.serverIP.c_str(), login.serverPort.c_str(), &hints, &servinfo)) != 0)
+    {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return -1;
     }
 
-    // loop through all the results and connect to the first we can
-    for (p = servinfo; p != NULL; p = p->ai_next) {
-        if ((newSockFD = socket(p->ai_family, p->ai_socktype,
-                p->ai_protocol)) == -1) {
+    // Loop through all the results and connect to the first we can
+    for (p = servinfo; p != NULL; p = p->ai_next)
+    {
+        if ((newSockFD = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1)
+        {
             perror("client: socket");
             continue;
         }
 
-        if (connect(newSockFD, p->ai_addr, p->ai_addrlen) == -1) {
+        if (connect(newSockFD, p->ai_addr, p->ai_addrlen) == -1)
+        {
             close(newSockFD);
             perror("client: connect");
             continue;
         }
-
         break;
     }
 
-    if (p == NULL) {
+    if (p == NULL)
+    {
         fprintf(stderr, "client: failed to connect\n");
         return -1;
     }
@@ -261,13 +295,16 @@ int createConnection(struct connectionDetails login) {
     return newSockFD;
 }
 
+
 int main(int argc, char** argv) {
 
     int sockfd;
     string buffer;
     struct connectionDetails login;
+    bool loggedIn = false;
 
-    if (argc != 1) {
+    if (argc != 1)
+    {
         fprintf(stderr, "usage: client\n");
         exit(1);
     }
@@ -277,19 +314,80 @@ int main(int argc, char** argv) {
     cout << "Please enter login information in the following format:\n"
             "/login <client_id> <password> <server-IP> <server-port>\n" << endl;
 
-    // Create stringstream to extract login input from user
-    string loginInput, command;
-    getline(cin, loginInput);
-    stringstream ssLogin(loginInput);
+    while(1)
+    {
+        // Create stringstream to extract login input from user
+        string input, command;
+        getline(cin, input);
+        stringstream ss(input);
 
-    ssLogin >> command >> login.clientID >> login.clientPassword
-            >> login.serverIP >> login.serverPort;
+        cout << "Read: '" + input + "'" << endl;
+        
+        ss >> command;
+        
+        cout << endl;
+        cout << "Command entered: " + command << endl;
 
-    sockfd = createConnection(login);
-    if(sockfd != -1){
-        if(tryLogin(login, sockfd))
-            cout<<"Login successful!"<<endl;
+        if (command == "/login" && !loggedIn)
+        {
+            // Get login information
+            ss >> login.clientID >> login.clientPassword
+               >> login.serverIP >> login.serverPort;
+            
+            // Create connection and get file descriptor
+            sockfd = createConnection(login);
+            
+            if(sockfd != -1)
+            { 
+                if(requestLogin(login, sockfd))
+                {
+                    cout<< "Login successful!"<<endl;
+                    loggedIn = true;
+                }
+
+            }
+            
+        }
+        else if(!loggedIn)
+        {
+            cout << "Please login." << endl;
+        }
+        else if (command == "/joinsession")
+        {
+            
+        }
+        else if (command == "/leavesession")
+        {
+            
+        }
+        else if (command == "/createsession")
+        {
+            
+        }
+        else if (command == "/list")
+        {
+            
+        }
+        else if(command == "/logout" || command == "/quit")
+        {
+            logout(login, sockfd);
+            close(sockfd);
+            cout << "Closing connection" << endl;
+            if(command == "/quit") exit(1);
+        }
+        else if (command.front() == '/')
+        {
+            cout << "Unknown command" << endl;
+        }
+        else
+        {
+            
+        }
+        cout << endl;
     }
+    
+    
+    
     //waiting for new commands(joint, leave, create session etc.) from user after login
     while (1) {
 
@@ -298,12 +396,7 @@ int main(int argc, char** argv) {
         stringstream command(cmd);
         command>>cmd;
         //if the user enters quit or logout, ends the program
-        if (cmd == "/logout" || cmd == "/quit") {
-            logout(login, sockfd);
-            close(sockfd);
-            cout << "closing connection" << endl;
-            exit(1);
-        }
+        
         char buf[MAXDATASIZE];
         strncpy(buf, buffer.c_str(), MAXDATASIZE);
         //if we receive invalid info from server, terminates the program
