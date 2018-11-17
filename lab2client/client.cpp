@@ -193,15 +193,9 @@ bool requestNewSession(string sessionID)
     string s(buffer), temp, data;
     stringstream ss(s);
     ss >> response >> temp >> temp >> data;
-    
-    // New session wasn't created
-    if(response == NS_NACK)
-    {
-        cout << "Error: " << data << endl;
-        return false;
-    }
-    // Session created
-    else if(response == NS_ACK && data == sessionID) return true;
+
+    if(response == NS_NACK) return false;
+    else if(response == NS_ACK) return true;
 }
 
 
@@ -426,7 +420,12 @@ int main(int argc, char** argv)
             ss >> sessionID;
             if(requestNewSession(sessionID) == true)
             {
+                cout << "Session created" << endl;
                 // Go into a session loop
+            }
+            else
+            {
+                cout << "Error: Session cannot be created" << endl;
             }
         }
         else if (command == CMD_LIST)

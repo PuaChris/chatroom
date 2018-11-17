@@ -89,6 +89,18 @@ string stringifyMessage(const struct message* data)
 }
 
 
+// Creates a message structure from a packet (string)
+struct message messageFromPacket(const char* buf)
+{
+    string buffer(buf);
+    stringstream ss(buffer);
+    struct message packet;
+    ss >> packet.type >> packet.size >> packet.source;
+    if(!(ss >> packet.data)) packet.data = "NoData";
+    return packet;
+}
+
+
 // Sends a message to client in the following format:
 //   message = "<type> <data_size> <source> <data>"
 // Returns true if message is successfully sent
@@ -204,36 +216,27 @@ bool loginClient(int sockfd)
 }
 
 
-bool createSession(int sockfd)
-{
-    char buffer[MAXDATASIZE];
-    int numBytes;
-    struct message sessionInfo;
+// Create a new session in the session list and initialize it with the 
+// requesting client. If it already exists, send back NACk
+bool createSession(int sockfd, struct message packet)
+{   
+    struct message ack;
+    ack.size = packet.size;
+    ack.source = "SERVER";
+    ack.data = packet.data;
     
-    if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
-    {
-        perror("recv");
-        sessionInfo.type  = -1; // Invalid data
-    }
-    else
-    {
-        string s(buffer);
-        stringstream ss(s);
-        ss >> sessionInfo.type >> sessionInfo.size
-           >> sessionInfo.source >> sessionInfo.data;
-    }
-
-    // Create a new session in the session list and initialize it with the 
-    // requesting client. If it already exists, send back NACk
-    auto res = sessionList.emplace(make_pair(sessionInfo.data, unordered_set<int>({sockfd})));
+    // Insert returns a pair describing if the insertion was successful
+    auto res = sessionList.insert(make_pair(packet.data, unordered_set<int>({sockfd})));
     if(res.second == false)
     {
-        // SEND NS_NACK
+        ack.type = NS_NACK;
+        sendToClient(&ack, sockfd);
         return false;
     }
     else
     {
-        // SEND NS_ACK
+        ack.type = NS_ACK;
+        sendToClient(&ack, sockfd);
         return true;
     }
     
@@ -246,7 +249,6 @@ int main(int argc, char** argv)
     fd_set read_fds;  // Temp file descriptor list for select()
     int fdmax;        // Maximum file descriptor number
 
-    char buf[MAXDATASIZE];    // Buffer for client data
     char remoteIP[INET6_ADDRSTRLEN];
 
     int listener = createListenerSocket(argv[1]);
@@ -300,6 +302,8 @@ int main(int argc, char** argv)
                 else // Handle other commands from client
                 {
                     int nbytes;
+                    char buf[MAXDATASIZE];
+
                     if ((nbytes = recv(i, buf, sizeof(buf), 0)) <= 0)
                     {
                         // Got error or connection closed by client
@@ -316,6 +320,44 @@ int main(int argc, char** argv)
                     
                     else // We got some data from a client
                     {
+                        struct message packet = messageFromPacket(buf);
+                        
+                        switch(packet.type)
+                        {
+//                            case JOIN:
+////                                JN_ACK
+////                                JN_NAK
+//                            case LEAVE_SESS:
+                            case NEW_SESS:
+                                if(createSession(i, packet) == true)
+                                {
+                                    cout << "New session created for client "
+                                         << packet.source << endl;
+                                }
+                                else
+                                {
+                                    cout << "Session cannot be created" << endl;
+                                }
+                                
+//                                for(auto it = sessionList.begin(); it != sessionList.end(); it++)
+//                                {
+//                                    cout << it->first << " has connected clients: ";
+//                                    for(auto it2 = it->second.begin(); it2 != it->second.end(); it2++)
+//                                    {
+//                                        cout << *it2 << ", ";
+//                                    }
+//                                    cout << endl;
+//                                }
+                                
+                                break;
+//                            case MESSAGE:
+//                            case QUERY:
+//                                QU_ACK
+                            default:
+                                cout << "Unknown packet type" << endl;
+                                break;
+                        }
+                        
 //                        for(int j = 0; j <= fdmax; j++) // Send to everyone!
 //                        {
 //                            if (FD_ISSET(j, &master)) // Except the listener and ourselves
