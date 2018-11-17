@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
 
     int listener = createListenerSocket(argv[1]);
     
-    // Clear the master and temp sets and add the listener socket to master
+    // Clear master and temp sets and add the listener socket to master
     FD_ZERO(&master);
     FD_ZERO(&read_fds);
     FD_SET(listener, &master);
