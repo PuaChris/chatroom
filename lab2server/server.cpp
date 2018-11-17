@@ -21,6 +21,8 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <unordered_map>
+#include <unordered_set>
 
 // Inserted into data when sending the list of clients and sessions to a client
 #define CLIENT_LIST_STRING "Clients Online:"
@@ -32,8 +34,7 @@
 using namespace std;
 
 // Defines control packet types
-enum msgType
-{
+enum msgType {
     LOGIN,
     LO_ACK,
     LO_NAK,
@@ -51,8 +52,7 @@ enum msgType
 
 
 // Message structure to be serialized when sending messages
-struct message
-{
+struct message {
     unsigned int type;
     unsigned int size;
     string source;
@@ -69,7 +69,6 @@ void *get_in_addr(struct sockaddr *sa)
 
     return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
-
 
 
 // Create a packet string from a message structure
@@ -168,8 +167,40 @@ void acknowledgeLogin(int sockfd)
 }
 
 
+// Gets login info from a newly created connection described by sockfd
+// Returns login info with a type of UINT_MAX if there was an error receiving data
+struct message getLoginInfo(int sockfd)
+{
+    char buffer[MAXDATASIZE];
+    int numBytes;
+    struct message loginInfo;
+    
+    if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
+    {
+        perror("recv");
+        loginInfo.type  = -1; // Invalid data
+    }
+    else
+    {
+        string s(buffer);
+        stringstream ss(s);
+        ss >> loginInfo.type >> loginInfo.size
+           >> loginInfo.source >> loginInfo.data;
+    }
+
+    return loginInfo;
+}
+
+
 int main(int argc, char** argv) {
 
+    // Key is file descriptor, value is client username and password
+    unordered_map<int, pair<string, string>> clientList;
+    
+    // Key is session name, value is set of file descriptors describing clients
+    // connected to the session
+    unordered_map<string, unordered_set<int>> sessionList;
+    
     fd_set master;    // Master file descriptor list
     fd_set read_fds;  // Temp file descriptor list for select()
     int fdmax;        // Maximum file descriptor number
@@ -210,17 +241,23 @@ int main(int argc, char** argv) {
 
                     if (newfd == -1) perror("accept");
                     else
-                    {
-                        FD_SET(newfd, &master); // add to master set
-                        if (newfd > fdmax) fdmax = newfd;
-                        
-                        acknowledgeLogin(newfd);
-                        
-                        printf("server: new connection from %s on socket %d\n",
-                            inet_ntop(remoteaddr.ss_family,
-                                get_in_addr((struct sockaddr*)&remoteaddr),
-                                remoteIP, INET6_ADDRSTRLEN),
-                            newfd);
+                    {   
+                        struct message newLogin = getLoginInfo(newfd);
+                        if(newLogin.type != -1)
+                        {
+                            clientList.insert(make_pair(newfd, make_pair(newLogin.source, newLogin.data)));
+                            FD_SET(newfd, &master); // add to master set
+                            if (newfd > fdmax) fdmax = newfd;
+                            
+                            // TODO Check if the client is double logging in
+                            acknowledgeLogin(newfd);
+
+                            printf("server: new connection from %s on socket %d\n",
+                                inet_ntop(remoteaddr.ss_family,
+                                    get_in_addr((struct sockaddr*)&remoteaddr),
+                                    remoteIP, INET6_ADDRSTRLEN),
+                                    newfd);
+                        }
                     }
                 }
                 
