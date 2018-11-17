@@ -298,10 +298,9 @@ int createConnection(struct connectionDetails login) {
 
 int main(int argc, char** argv) {
 
-    int sockfd;
-    string buffer;
-    struct connectionDetails login;
-    bool loggedIn = false;
+    int sockfd;                     // Socket used to communicate with server
+    struct connectionDetails login; // Holds login details pertaining to this client
+    bool loggedIn = false;          // Keep track of if this client is logged in
 
     if (argc != 1)
     {
@@ -394,7 +393,7 @@ int main(int argc, char** argv) {
         {
             cout << "Unknown command" << endl;
         }
-
+        
         cout << endl;
     }
     return 0;
