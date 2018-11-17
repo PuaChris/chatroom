@@ -33,12 +33,12 @@
 #include <arpa/inet.h>
 
 #define CMD_LOGIN      "/login"
-#define CMD_LOGOUT     "/logout\n"
+#define CMD_LOGOUT     "/logout"
 #define CMD_JOINSESS   "/joinsession"
-#define CMD_LEAVESESS  "/leavesession\n"
+#define CMD_LEAVESESS  "/leavesession"
 #define CMD_CREATESESS "/createsession"
-#define CMD_LIST       "/list\n"
-#define CMD_QUIT       "/quit\n"
+#define CMD_LIST       "/list"
+#define CMD_QUIT       "/quit"
 
 // Inserted into data when sending the list of clients and sessions to a client
 #define CLIENT_LIST_STRING "Clients Online:"
@@ -311,104 +311,91 @@ int main(int argc, char** argv) {
 
     /********************** GET LOGIN/CONNECTION INFO *************************/
 
-    cout << "Please enter login information in the following format:\n"
+    cout << "\nPlease enter login information in the following format:\n"
             "/login <client_id> <password> <server-IP> <server-port>\n" << endl;
 
     while(1)
     {
+        cout << ">>";
         // Create stringstream to extract login input from user
         string input, command;
         getline(cin, input);
         stringstream ss(input);
-
-        cout << "Read: '" + input + "'" << endl;
         
         ss >> command;
-        
-        cout << endl;
-        cout << "Command entered: " + command << endl;
 
-        if (command == "/login" && !loggedIn)
+        if (command == "/login")
         {
-            // Get login information
-            ss >> login.clientID >> login.clientPassword
-               >> login.serverIP >> login.serverPort;
-            
-            // Create connection and get file descriptor
-            sockfd = createConnection(login);
-            
-            if(sockfd != -1)
-            { 
-                if(requestLogin(login, sockfd))
-                {
-                    cout<< "Login successful!"<<endl;
-                    loggedIn = true;
-                }
+            if(!loggedIn)
+            {
+                // Get login information
+                ss >> login.clientID >> login.clientPassword
+                   >> login.serverIP >> login.serverPort;
 
+                // Create connection and get file descriptor
+                sockfd = createConnection(login);
+
+                if(sockfd != -1)
+                { 
+                    if(requestLogin(login, sockfd))
+                    {
+                        cout<< "Login successful!"<<endl;
+                        loggedIn = true;
+                    }
+
+                }
             }
+            else cout << "Already logged in!" << endl;
             
+        }
+        else if(command == CMD_LOGOUT)
+        {
+            if(loggedIn)
+            {
+                logout(login, sockfd);
+                close(sockfd);
+                cout << "Closing connection" << endl;
+                loggedIn = false;
+            }
+            else cout << "Please login." << endl;
+        }
+        else if(command == CMD_QUIT)
+        {
+            if(loggedIn)
+            {
+                logout(login, sockfd);
+                close(sockfd);
+                cout << "Closing connection" << endl;
+                loggedIn = false;
+            }
+            exit(1);
         }
         else if(!loggedIn)
         {
             cout << "Please login." << endl;
         }
-        else if (command == "/joinsession")
+        else if (command == CMD_JOINSESS)
         {
             
         }
-        else if (command == "/leavesession")
+        else if (command == CMD_LEAVESESS)
         {
             
         }
-        else if (command == "/createsession")
+        else if (command == CMD_CREATESESS)
         {
             
         }
-        else if (command == "/list")
+        else if (command == CMD_LIST)
         {
             
-        }
-        else if(command == "/logout" || command == "/quit")
-        {
-            logout(login, sockfd);
-            close(sockfd);
-            cout << "Closing connection" << endl;
-            if(command == "/quit") exit(1);
-        }
-        else if (command.front() == '/')
-        {
-            cout << "Unknown command" << endl;
         }
         else
         {
-            
+            cout << "Unknown command" << endl;
         }
+
         cout << endl;
     }
-    
-    
-    
-    //waiting for new commands(joint, leave, create session etc.) from user after login
-    while (1) {
-
-        string cmd;
-        getline(cin, cmd);
-        stringstream command(cmd);
-        command>>cmd;
-        //if the user enters quit or logout, ends the program
-        
-        char buf[MAXDATASIZE];
-        strncpy(buf, buffer.c_str(), MAXDATASIZE);
-        //if we receive invalid info from server, terminates the program
-        if (recv(sockfd, buf, MAXDATASIZE - 1, 0) == -1) {
-            close(sockfd);
-            cout << "closing connection" << endl;
-            exit(1);
-        }
-
-    }
-    
-    close(sockfd);
-
     return 0;
 }
