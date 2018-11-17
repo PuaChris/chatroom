@@ -45,6 +45,7 @@ enum msgType {
     LEAVE_SESS,
     NEW_SESS,
     NS_ACK,
+    NS_NACK,
     MESSAGE,
     QUERY,
     QU_ACK
@@ -58,6 +59,14 @@ struct message {
     string source;
     string data;
 };
+
+
+// Key is file descriptor, value is client username and password
+unordered_map<int, pair<string, string>> clientList;
+
+// Key is session name, value is set of file descriptors describing clients
+// connected to the session
+unordered_map<string, unordered_set<int>> sessionList;
 
 
 // Get sockaddr, IPv4 or IPv6:
@@ -88,8 +97,8 @@ bool sendToClient(struct message *data, int sockfd)
     int numBytes;
     string dataStr = stringifyMessage(data);
 
-    if(dataStr.length() > MAXDATASIZE) return false;
-    if((numBytes = send(sockfd, dataStr.c_str(), dataStr.length(), 0)) == -1)
+    if(sizeof(dataStr) > MAXDATASIZE) return false;
+    if((numBytes = send(sockfd, dataStr.c_str(), sizeof(dataStr), 0)) == -1)
     {
         perror("send");
         return false;
@@ -192,15 +201,44 @@ struct message getLoginInfo(int sockfd)
 }
 
 
-int main(int argc, char** argv) {
+bool createSession(int sockfd)
+{
+    char buffer[MAXDATASIZE];
+    int numBytes;
+    struct message sessionInfo;
+    
+    if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
+    {
+        perror("recv");
+        sessionInfo.type  = -1; // Invalid data
+    }
+    else
+    {
+        string s(buffer);
+        stringstream ss(s);
+        ss >> sessionInfo.type >> sessionInfo.size
+           >> sessionInfo.source >> sessionInfo.data;
+    }
 
-    // Key is file descriptor, value is client username and password
-    unordered_map<int, pair<string, string>> clientList;
+    // Create a new session in the session list and initialize it with the 
+    // requesting client. If it already exists, send back NACk
+    auto res = sessionList.emplace(make_pair(sessionInfo.data, unordered_set<int>({sockfd})));
+    if(res.second == false)
+    {
+        // SEND NS_NACK
+        return false;
+    }
+    else
+    {
+        // SEND NS_ACK
+        return true;
+    }
     
-    // Key is session name, value is set of file descriptors describing clients
-    // connected to the session
-    unordered_map<string, unordered_set<int>> sessionList;
-    
+}
+
+
+int main(int argc, char** argv)
+{
     fd_set master;    // Master file descriptor list
     fd_set read_fds;  // Temp file descriptor list for select()
     int fdmax;        // Maximum file descriptor number
@@ -258,16 +296,10 @@ int main(int argc, char** argv) {
                                     remoteIP, INET6_ADDRSTRLEN),
                                     newfd);
                         }
-                    }
-                    
-                    for(auto it = clientList.begin(); it != clientList.end(); it++)
-                    {
-                        cout << it->first << ": " << it->second.first << ", " << it->second.second << endl;
-                    }
-                    
+                    }             
                 }
                 
-                else // Handle data from a client
+                else // Handle other commands from client
                 {
                     int nbytes;
                     if ((nbytes = recv(i, buf, sizeof(buf), 0)) <= 0)

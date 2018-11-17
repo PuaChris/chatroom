@@ -46,6 +46,7 @@
 
 using namespace std;
 
+
 // Defines control packet types
 enum msgType {
     LOGIN,
@@ -83,6 +84,12 @@ struct connectionDetails {
 };
 
 
+// GLOBAL VARIABLES
+int sockfd;                     // Socket used to communicate with server
+struct connectionDetails login; // Holds login details pertaining to this client
+bool loggedIn = false;          // Keep track of if this client is logged in
+
+
 // Get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
@@ -106,13 +113,13 @@ string stringifyMessage(const struct message* data)
 // Sends a message to server in the following format:
 //   message = "<type> <data_size> <source> <data>"
 // Returns true if message is successfully sent
-bool sendToServer(struct message *data, int sockfd)
+bool sendToServer(struct message *data)
 {
     int numBytes;
     string dataStr = stringifyMessage(data);
 
-    if(dataStr.length() > MAXDATASIZE) return false;
-    if((numBytes = send(sockfd, dataStr.c_str(), dataStr.length(), 0)) == -1)
+    if(sizeof(dataStr) > MAXDATASIZE) return false;
+    if((numBytes = send(sockfd, dataStr.c_str(), sizeof(dataStr), 0)) == -1)
     {
         perror("send");
         return false;
@@ -129,12 +136,12 @@ bool requestLogin(struct connectionDetails login, int sockfd)
     int numBytes, response;
     struct message info;
     info.type = LOGIN;
-    info.size = login.clientPassword.length() + 1;
+    info.size = sizeof(login.clientPassword);
     info.source = login.clientID;
-    info.data = login.clientPassword + '\0';
+    info.data = login.clientPassword;
         
     // Sends login request to server
-    if(!sendToServer(&info, sockfd)){
+    if(!sendToServer(&info)){
         return false;
     }
     
@@ -159,8 +166,44 @@ bool requestLogin(struct connectionDetails login, int sockfd)
 }
 
 
+bool requestNewSession(string sessionID)
+{
+    char buffer[MAXDATASIZE];
+    int numBytes, response;
+    struct message newSession;
+    newSession.type = NEW_SESS;
+    newSession.size = sizeof(sessionID);
+    newSession.source = login.clientID;
+    newSession.data = sessionID;
+    
+    // Sends login request to server
+    if(!sendToServer(&newSession)){
+        return false;
+    }
+    
+    // Server response
+    if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
+    {
+        perror("recv");
+        return false;
+    }
+    
+    // Checking packet type
+    string s(buffer);
+    stringstream ss(s);
+    ss >> response;
+    
+    if(response != NS_ACK)
+    {
+        cout << "New session couldn't be created!" << endl;
+        return false;
+    }
+    return true;
+}
+
+
 // Sends the logout request to the server
-void logout(struct connectionDetails login, int sockfd)
+void logout()
 {
     struct message info;
     info.type = EXIT;
@@ -168,7 +211,7 @@ void logout(struct connectionDetails login, int sockfd)
     info.source = login.clientID;
     info.data = "";
     
-    if(sendToServer(&info, sockfd)) cout << "Logout successful!" << endl;
+    if(sendToServer(&info)) cout << "Logout successful!" << endl;
 }
 
 
@@ -193,7 +236,7 @@ void printClientSessionList(string buffer)
 
 // Sends a request to return the list of active clients and available sessions
 // Returns true if the list is successfully received
-bool requestClientSessionList(struct connectionDetails login, int sockfd)
+bool requestClientSessionList()
 {
     int numBytes, response;
     char buffer[MAXDATASIZE];
@@ -205,7 +248,7 @@ bool requestClientSessionList(struct connectionDetails login, int sockfd)
     info.source = login.clientID;
     info.data = "";
     
-    if(!sendToServer(&info, sockfd)){
+    if(!sendToServer(&info)){
         cout << "List unavailable!" << endl;
         return false;
     }
@@ -239,7 +282,7 @@ bool requestClientSessionList(struct connectionDetails login, int sockfd)
 
 // Creates connection with server and returns socket file descriptor that
 // describes the connection
-int createConnection(struct connectionDetails login) {
+int createConnection() {
     
     int newSockFD, rv;
     struct addrinfo hints, *servinfo, *p;
@@ -295,12 +338,8 @@ int createConnection(struct connectionDetails login) {
 }
 
 
-int main(int argc, char** argv) {
-
-    int sockfd;                     // Socket used to communicate with server
-    struct connectionDetails login; // Holds login details pertaining to this client
-    bool loggedIn = false;          // Keep track of if this client is logged in
-
+int main(int argc, char** argv)
+{
     if (argc != 1)
     {
         fprintf(stderr, "usage: client\n");
@@ -331,7 +370,7 @@ int main(int argc, char** argv) {
                    >> login.serverIP >> login.serverPort;
 
                 // Create connection and get file descriptor
-                sockfd = createConnection(login);
+                sockfd = createConnection();
 
                 if(sockfd != -1)
                 { 
@@ -350,7 +389,7 @@ int main(int argc, char** argv) {
         {
             if(loggedIn)
             {
-                logout(login, sockfd);
+                logout();
                 close(sockfd);
                 cout << "Closing connection" << endl;
                 loggedIn = false;
@@ -361,7 +400,7 @@ int main(int argc, char** argv) {
         {
             if(loggedIn)
             {
-                logout(login, sockfd);
+                logout();
                 close(sockfd);
                 cout << "Closing connection" << endl;
                 loggedIn = false;
@@ -382,7 +421,8 @@ int main(int argc, char** argv) {
         }
         else if (command == CMD_CREATESESS)
         {
-            
+            string sessionID;
+            ss >> sessionID;
         }
         else if (command == CMD_LIST)
         {
