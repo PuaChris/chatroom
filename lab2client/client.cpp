@@ -59,6 +59,7 @@ enum msgType {
     LEAVE_SESS,
     NEW_SESS,
     NS_ACK,
+    NS_NACK,
     MESSAGE,
     QUERY,
     QU_ACK
@@ -130,7 +131,7 @@ bool sendToServer(struct message *data)
 
 // Sends login info to server and checks server's response
 // Returns true if login is successful
-bool requestLogin(struct connectionDetails login, int sockfd)
+bool requestLogin(struct connectionDetails login)
 {
     char buffer[MAXDATASIZE];
     int numBytes, response;
@@ -189,16 +190,18 @@ bool requestNewSession(string sessionID)
     }
     
     // Checking packet type
-    string s(buffer);
+    string s(buffer), temp, data;
     stringstream ss(s);
-    ss >> response;
+    ss >> response >> temp >> temp >> data;
     
-    if(response != NS_ACK)
+    // New session wasn't created
+    if(response == NS_NACK)
     {
-        cout << "New session couldn't be created!" << endl;
+        cout << "Error: " << data << endl;
         return false;
     }
-    return true;
+    // Session created
+    else if(response == NS_ACK && data == sessionID) return true;
 }
 
 
@@ -236,7 +239,7 @@ void printClientSessionList(string buffer)
 
 // Sends a request to return the list of active clients and available sessions
 // Returns true if the list is successfully received
-bool requestClientSessionList()
+pair<bool, string> requestClientSessionList()
 {
     int numBytes, response;
     char buffer[MAXDATASIZE];
@@ -250,14 +253,14 @@ bool requestClientSessionList()
     
     if(!sendToServer(&info)){
         cout << "List unavailable!" << endl;
-        return false;
+        return make_pair(false, "NoList");
     }
     
     // Server response
     if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
     {
         perror("recv");
-        return false;
+        return make_pair(false, "NoList");
     }
     
     // Checking packet type
@@ -267,23 +270,21 @@ bool requestClientSessionList()
     
     if(response != QU_ACK)
     {
-        cout << "Login failed!" << endl;
-        return false;
+        cout << "List unavailable!" << endl;
+        return make_pair(false, "NoList");
     }
-    
-    // List received, print clients and sessions
+    // List received, return it
     else
     {
-        printClientSessionList(s);
-        return true;
+        return make_pair(true, s);
     }
 }
 
 
 // Creates connection with server and returns socket file descriptor that
 // describes the connection
-int createConnection() {
-    
+int createConnection()
+{
     int newSockFD, rv;
     struct addrinfo hints, *servinfo, *p;
     char s[INET6_ADDRSTRLEN];
@@ -374,7 +375,7 @@ int main(int argc, char** argv)
 
                 if(sockfd != -1)
                 { 
-                    if(requestLogin(login, sockfd))
+                    if(requestLogin(login))
                     {
                         cout<< "Login successful!"<<endl;
                         loggedIn = true;
@@ -423,10 +424,15 @@ int main(int argc, char** argv)
         {
             string sessionID;
             ss >> sessionID;
+            if(requestNewSession(sessionID) == true)
+            {
+                // Go into a session loop
+            }
         }
         else if (command == CMD_LIST)
         {
-            
+            auto res = requestClientSessionList();
+            if(res.first == true) printClientSessionList(res.second);
         }
         else
         {

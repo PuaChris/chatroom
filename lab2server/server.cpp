@@ -176,9 +176,10 @@ void acknowledgeLogin(int sockfd)
 }
 
 
-// Gets login info from a newly created connection described by sockfd
-// Returns login info with a type of UINT_MAX if there was an error receiving data
-struct message getLoginInfo(int sockfd)
+// Logs a client described by a file descriptor into the server
+// Returns true if successful
+// TODO Check if the client is double logging in
+bool loginClient(int sockfd)
 {
     char buffer[MAXDATASIZE];
     int numBytes;
@@ -187,7 +188,7 @@ struct message getLoginInfo(int sockfd)
     if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
     {
         perror("recv");
-        loginInfo.type  = -1; // Invalid data
+        return false;
     }
     else
     {
@@ -196,8 +197,10 @@ struct message getLoginInfo(int sockfd)
         ss >> loginInfo.type >> loginInfo.size
            >> loginInfo.source >> loginInfo.data;
     }
-
-    return loginInfo;
+    
+    clientList.insert(make_pair(sockfd, make_pair(loginInfo.source, loginInfo.data)));
+    acknowledgeLogin(sockfd);
+    return true;
 }
 
 
@@ -280,15 +283,10 @@ int main(int argc, char** argv)
                     if (newfd == -1) perror("accept");
                     else
                     {   
-                        struct message newLogin = getLoginInfo(newfd);
-                        if(newLogin.type != -1)
+                        if(loginClient(newfd) == true)
                         {
-                            clientList.insert(make_pair(newfd, make_pair(newLogin.source, newLogin.data)));
                             FD_SET(newfd, &master); // add to master set
                             if (newfd > fdmax) fdmax = newfd;
-                            
-                            // TODO Check if the client is double logging in
-                            acknowledgeLogin(newfd);
 
                             printf("server: new connection from %s on socket %d\n",
                                 inet_ntop(remoteaddr.ss_family,
