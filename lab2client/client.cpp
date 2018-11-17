@@ -129,10 +129,10 @@ bool requestLogin(struct connectionDetails login, int sockfd)
     int numBytes, response;
     struct message info;
     info.type = LOGIN;
-    info.size = login.clientPassword.length();
+    info.size = login.clientPassword.length() + 1;
     info.source = login.clientID;
-    info.data = login.clientPassword;
-    
+    info.data = login.clientPassword + '\0';
+        
     // Sends login request to server
     if(!sendToServer(&info, sockfd)){
         return false;

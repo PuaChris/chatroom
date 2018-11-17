@@ -259,6 +259,12 @@ int main(int argc, char** argv) {
                                     newfd);
                         }
                     }
+                    
+                    for(auto it = clientList.begin(); it != clientList.end(); it++)
+                    {
+                        cout << it->first << ": " << it->second.first << ", " << it->second.second << endl;
+                    }
+                    
                 }
                 
                 else // Handle data from a client
@@ -270,6 +276,7 @@ int main(int argc, char** argv) {
                         if (nbytes == 0) // Connection closed
                         {
                             printf("server: socket %d hung up\n", i);
+                            clientList.erase(i);
                         }
                         else perror("recv");
                         
