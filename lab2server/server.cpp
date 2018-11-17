@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
         // Run through the existing connections looking for data to read
         for(int i = 0; i <= fdmax; i++)
         {
-            if (FD_ISSET(i, &read_fds)) // Part of the tracked sockets
+            if (FD_ISSET(i, &read_fds)) // Part of the tracked file descriptors
             { 
                 if (i == listener) // Handle new connections
                 {
