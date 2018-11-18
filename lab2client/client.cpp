@@ -11,6 +11,8 @@
  * - Disconnect clients when server closes
  * - Double logging in
  * - Parsing issues (e.g. incorrect number of arguments)
+ * - Case where user inputs multiple words for a session name
+ * - Need to output reason for not joining session to client
  * 
  */
 
@@ -166,7 +168,50 @@ bool requestLogin(struct connectionDetails login)
     return true;
 }
 
+// Requests to join a session in the server and checks server's response
+// Returns true if joined session
+bool requestJoinSession(string sessionID)
+{
+    char buffer[MAXDATASIZE];
+    int numBytes, response;
+    struct message joinSession;
+    joinSession.type = JOIN;
+    joinSession.size = sizeof(sessionID);
+    joinSession.source = login.clientID;
+    joinSession.data = sessionID;
+    
+    // Sends login request to server
+    if(!sendToServer(&joinSession)){
+        return false;
+    }
+    
+    // Server response
+    if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
+    {
+        perror("recv");
+        return false;
+    }
+    
+    // Checking packet type
+    string s(buffer), temp, data;
+    stringstream ss(s);
+    ss >> response >> temp >> temp >> data;
 
+    if(response == JN_NAK) 
+    {
+        cout << "Error: Session '" << data << "' could not be joined" << endl;
+        return false;
+    }
+    
+    else if(response == JN_ACK)
+    {
+        cout << "Session '" << data << "' joined" << endl;
+        return true;
+    }
+}
+
+// Requests to make a new session and checks the server's response
+// Returns true if session was successfully created
 bool requestNewSession(string sessionID)
 {
     char buffer[MAXDATASIZE];
@@ -194,8 +239,17 @@ bool requestNewSession(string sessionID)
     stringstream ss(s);
     ss >> response >> temp >> temp >> data;
 
-    if(response == NS_NACK) return false;
-    else if(response == NS_ACK) return true;
+    if(response == NS_NACK) 
+    {
+        cout << "Error: Session '" << data << "' could not be created" << endl;
+        return false;
+    }
+    
+    else if(response == NS_ACK)
+    {
+        cout << "Session '" << data << "' created" << endl;
+        return true;
+    }
 }
 
 
@@ -408,7 +462,16 @@ int main(int argc, char** argv)
         }
         else if (command == CMD_JOINSESS)
         {
-            
+            string sessionID;
+            ss >> sessionID;
+            if(requestJoinSession(sessionID) == true)
+            {
+                // Go into a session loop
+            }
+            else
+            {
+
+            }
         }
         else if (command == CMD_LEAVESESS)
         {
@@ -420,12 +483,11 @@ int main(int argc, char** argv)
             ss >> sessionID;
             if(requestNewSession(sessionID) == true)
             {
-                cout << "Session created" << endl;
                 // Go into a session loop
             }
             else
             {
-                cout << "Error: Session cannot be created" << endl;
+
             }
         }
         else if (command == CMD_LIST)

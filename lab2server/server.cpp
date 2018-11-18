@@ -217,7 +217,7 @@ bool loginClient(int sockfd)
 
 
 // Create a new session in the session list and initialize it with the 
-// requesting client. If it already exists, send back NACk
+// requesting client. If it already exists, send back NACK
 bool createSession(int sockfd, struct message packet)
 {   
     struct message ack;
@@ -240,6 +240,31 @@ bool createSession(int sockfd, struct message packet)
         return true;
     }
     
+}
+
+// Joins an existing session in the session list. If it doesn't exist,
+// send back NACK
+bool joinSession (int sockfd, struct message packet)
+{
+    struct message ack;
+    ack.size = packet.size;
+    ack.source = "SERVER";
+    ack.data = packet.data;
+    
+    auto session = sessionList.find(packet.data);
+    if (session != sessionList.end())
+    {
+        session -> second.insert(sockfd);
+        ack.type = JN_ACK;
+        sendToClient(&ack, sockfd);
+        return true;
+    }
+    else 
+    {
+        ack.type = JN_NAK;
+        sendToClient(&ack, sockfd);
+        return false;
+    }
 }
 
 
@@ -324,20 +349,77 @@ int main(int argc, char** argv)
                         
                         switch(packet.type)
                         {
-//                            case JOIN:
-////                                JN_ACK
-////                                JN_NAK
+                            case JOIN:
+                                if(joinSession(i, packet) == true)
+                                {
+                                    cout << "Client '" << packet.source << "' joined session '" 
+                                         << packet.data << endl;
+                                }
+                                else
+                                {
+                                    cout << "Client '" << packet.source << "' could not join session '" 
+                                         << packet.data << endl;
+                                    //Need to return reason for error 
+                                }
+                                
+                                //Printing out all connected clients, sessions, and socket numbers in each session
+                                /*
+                                for (auto i = clientList.begin(); i != clientList.end(); i++)
+                                {
+                                    cout << i -> first << " : " << i -> second.first << " : "
+                                         << i -> second.second << " : " << endl;
+                                }
+                                
+                                cout << endl;
+                                
+                                for (auto j = sessionList.begin(); j != sessionList.end(); j++)
+                                {
+                                    for (auto k = j -> second.begin(); k != j -> second.end(); k++)
+                                    {
+                                        cout << j -> first << " : " << *k << endl;
+                                    }
+                                }
+                                
+                                cout << endl;
+                                */
+                                
+                                break;
+                                
+                                
 //                            case LEAVE_SESS:
                             case NEW_SESS:
                                 if(createSession(i, packet) == true)
                                 {
-                                    cout << "New session created for client "
+                                    cout << "New session '" << packet.data << "' created for client "
                                          << packet.source << endl;
                                 }
                                 else
                                 {
-                                    cout << "Session cannot be created" << endl;
+                                    cout << "Session '" << packet.data << "' cannot be created" 
+                                         << endl;
                                 }
+                                
+                                //Printing out all connected clients, sessions, and socket numbers in each session
+                                /*
+                                for (auto i = clientList.begin(); i != clientList.end(); i++)
+                                {
+                                    cout << i -> first << " : " << i -> second.first << " : "
+                                         << i -> second.second << " : " << endl;
+                                }
+                                
+                                cout << endl;
+                                
+                                for (auto j = sessionList.begin(); j != sessionList.end(); j++)
+                                {
+                                    for (auto k = j -> second.begin(); k != j -> second.end(); k++)
+                                    {
+                                        cout << j -> first << " : " << *k << endl;
+                                    }
+                                }
+                                
+                                cout << endl;
+                                */
+                                
                                 
 //                                for(auto it = sessionList.begin(); it != sessionList.end(); it++)
 //                                {
