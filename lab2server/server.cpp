@@ -28,6 +28,8 @@
 #define CLIENT_LIST_STRING "Clients Online:"
 #define SESSION_LIST_STRING "Available Clients:"
 
+#define SESSION_NOT_FOUND "NoSessionFound"
+
 #define BACKLOG 10       // How many pending connections queue will hold
 #define MAXDATASIZE 1380 // Max number of bytes we can get at once 
 
@@ -43,6 +45,8 @@ enum msgType {
     JN_ACK,
     JN_NAK,
     LEAVE_SESS,
+    LS_ACK,
+    LS_NAK,
     NEW_SESS,
     NS_ACK,
     NS_NACK,
@@ -79,46 +83,6 @@ void *get_in_addr(struct sockaddr *sa)
     return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
-
-// Create a packet string from a message structure
-string stringifyMessage(const struct message* data)
-{
-    string dataStr = to_string(data->type) + " " + to_string(data->size) 
-                     + " " + data->source + " " + data->data;
-    return dataStr;
-}
-
-
-// Creates a message structure from a packet (string)
-struct message messageFromPacket(const char* buf)
-{
-    string buffer(buf);
-    stringstream ss(buffer);
-    struct message packet;
-    ss >> packet.type >> packet.size >> packet.source;
-    if(!(ss >> packet.data)) packet.data = "NoData";
-    return packet;
-}
-
-
-// Sends a message to client in the following format:
-//   message = "<type> <data_size> <source> <data>"
-// Returns true if message is successfully sent
-bool sendToClient(struct message *data, int sockfd)
-{
-    int numBytes;
-    string dataStr = stringifyMessage(data);
-
-    if(sizeof(dataStr) > MAXDATASIZE) return false;
-    if((numBytes = send(sockfd, dataStr.c_str(), sizeof(dataStr), 0)) == -1)
-    {
-        perror("send");
-        return false;
-    }
-    return true;
-}
-
-
 // Creates socket that listens for new connections and returns the file descriptor
 int createListenerSocket(const char* portNum)
 {
@@ -128,7 +92,6 @@ int createListenerSocket(const char* portNum)
     
     struct addrinfo hints, *ai, *p;
     
-    // get us a socket and bind it
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -175,6 +138,62 @@ int createListenerSocket(const char* portNum)
 }
 
 
+// Create a packet string from a message structure
+string stringifyMessage(const struct message* data)
+{
+    string dataStr = to_string(data->type) + " " + to_string(data->size) 
+                     + " " + data->source + " " + data->data;
+    return dataStr;
+}
+
+
+// Creates a message structure from a packet (string)
+struct message messageFromPacket(const char* buf)
+{
+    string buffer(buf);
+    stringstream ss(buffer);
+    struct message packet;
+    ss >> packet.type >> packet.size >> packet.source;
+    if(!(ss >> packet.data)) packet.data = "NoData";
+    return packet;
+}
+
+
+// Return the sessionID that the sockfd is connected to
+// Returns "No session found" if session could not be found
+string clientSockfdToSessionID (int sockfd)
+{
+    
+    for (auto session = sessionList.begin(); session != sessionList.end(); session++)
+    {
+        for (auto client = session -> second.begin(); client != session -> second.end(); client++)
+        {
+            if (*client == sockfd) return session -> first;
+        }
+    }
+
+    return SESSION_NOT_FOUND;
+}
+
+
+// Sends a message to client in the following format:
+//   message = "<type> <data_size> <source> <data>"
+// Returns true if message is successfully sent
+bool sendToClient(struct message *data, int sockfd)
+{
+    int numBytes;
+    string dataStr = stringifyMessage(data);
+
+    if(sizeof(dataStr) > MAXDATASIZE) return false;
+    if((numBytes = send(sockfd, dataStr.c_str(), sizeof(dataStr), 0)) == -1)
+    {
+        perror("send");
+        return false;
+    }
+    return true;
+}
+
+
 // Send an acknowledge to a client if their login is successful
 void acknowledgeLogin(int sockfd)
 {
@@ -185,17 +204,6 @@ void acknowledgeLogin(int sockfd)
     loginAck.data = "";
     
     sendToClient(&loginAck, sockfd);
-}
-
-void acknowledgeList(int sockfd, string buffer)
-{
-    struct message listAck;
-    listAck.type = QU_ACK;
-    listAck.size = buffer.length();
-    listAck.source = "SERVER";
-    listAck.data = buffer;
-    
-    sendToClient(&listAck, sockfd);
 }
 
 
@@ -227,6 +235,75 @@ bool loginClient(int sockfd)
 }
 
 
+// Joins an existing session in the session list. If it doesn't exist,
+// return false
+bool joinSession (int sockfd, struct message packet)
+{
+    struct message ack;
+    ack.size = packet.size;
+    ack.source = "SERVER";
+    ack.data = packet.data;
+    
+    string sessionID = clientSockfdToSessionID(sockfd);
+    
+
+    auto session = sessionList.find(packet.data);
+    
+    // Checking first to see if session exists
+    // Then checking to make sure client is not in a session already
+    if (session != sessionList.end() &&
+        sessionID == SESSION_NOT_FOUND)
+    {        
+
+        session -> second.insert(sockfd);
+        ack.type = JN_ACK;
+        sendToClient(&ack, sockfd);
+        return true;
+    }
+    
+    // Client is already in a session and must leave before they can join another one
+    // or session does not exist 
+    else 
+    {
+        ack.type = JN_NAK;
+        
+        // Client is currently in a session
+        if (sessionID != SESSION_NOT_FOUND) ack.data = sessionID;
+        
+        // Session that client is trying to join does not exist
+        else ack.data = SESSION_NOT_FOUND;
+        
+        sendToClient(&ack, sockfd);
+        return false;
+    }
+}
+
+// Lets client leave an existing session. If they are currently not in a session,
+// return false
+bool leaveSession (int sockfd, struct message packet)
+{
+    struct message ack;
+    ack.size = packet.size;
+    ack.source = "SERVER";
+    ack.data = packet.data;
+    
+    auto session = sessionList.find(packet.data);
+    if (session != sessionList.end())
+    {
+        session -> second.insert(sockfd);
+        ack.type = LS_ACK;
+        sendToClient(&ack, sockfd);
+        return true;
+    }
+    else 
+    {
+        ack.type = LS_NAK;
+        sendToClient(&ack, sockfd);
+        return false;
+    }
+}
+
+
 // Create a new session in the session list and initialize it with the 
 // requesting client. If it already exists, send back NACK
 bool createSession(int sockfd, struct message packet)
@@ -253,6 +330,19 @@ bool createSession(int sockfd, struct message packet)
     
 }
 
+
+//Send an acknowledge to a client for requesting a list
+void acknowledgeList(int sockfd, string buffer)
+{
+    struct message listAck;
+    listAck.type = QU_ACK;
+    listAck.size = buffer.length();
+    listAck.source = "SERVER";
+    listAck.data = buffer;
+    
+    sendToClient(&listAck, sockfd);
+}
+
 void createList(int sockfd)
 {
     string buffer = "Clients Online: ";
@@ -267,30 +357,6 @@ void createList(int sockfd)
     }
     
     acknowledgeList(sockfd, buffer);
-}
-// Joins an existing session in the session list. If it doesn't exist,
-// send back NACK
-bool joinSession (int sockfd, struct message packet)
-{
-    struct message ack;
-    ack.size = packet.size;
-    ack.source = "SERVER";
-    ack.data = packet.data;
-    
-    auto session = sessionList.find(packet.data);
-    if (session != sessionList.end())
-    {
-        session -> second.insert(sockfd);
-        ack.type = JN_ACK;
-        sendToClient(&ack, sockfd);
-        return true;
-    }
-    else 
-    {
-        ack.type = JN_NAK;
-        sendToClient(&ack, sockfd);
-        return false;
-    }
 }
 
 
@@ -384,10 +450,11 @@ int main(int argc, char** argv)
                                 else
                                 {
                                     cout << "Client '" << packet.source << "' could not join session '" 
-                                         << packet.data << endl;
+                                         << packet.data << "'" << endl;
                                     //Need to return reason for error 
                                 }
                                 
+                               
                                 //Printing out all connected clients, sessions, and socket numbers in each session
                                 /*
                                 for (auto i = clientList.begin(); i != clientList.end(); i++)
@@ -412,7 +479,20 @@ int main(int argc, char** argv)
                                 break;
                                 
                                 
-//                            case LEAVE_SESS:
+                            case LEAVE_SESS:
+                                if (leaveSession(i ,packet) == true)
+                                {
+                                    cout << "Client '" << packet.source << "' left session '" 
+                                         << packet.data << endl;
+                                }
+                                else
+                                {
+                                    cout << "Client '" << packet.source << "' could not leave session '" 
+                                         << packet.data << endl;
+                                }
+                                
+                                break;
+                                
                             case NEW_SESS:
                                 if(createSession(i, packet) == true)
                                 {
@@ -424,29 +504,9 @@ int main(int argc, char** argv)
                                     cout << "Session '" << packet.data << "' cannot be created" 
                                          << endl;
                                 }
+                                                                
                                 
-                                //Printing out all connected clients, sessions, and socket numbers in each session
-                                /*
-                                for (auto i = clientList.begin(); i != clientList.end(); i++)
-                                {
-                                    cout << i -> first << " : " << i -> second.first << " : "
-                                         << i -> second.second << " : " << endl;
-                                }
-                                
-                                cout << endl;
-                                
-                                for (auto j = sessionList.begin(); j != sessionList.end(); j++)
-                                {
-                                    for (auto k = j -> second.begin(); k != j -> second.end(); k++)
-                                    {
-                                        cout << j -> first << " : " << *k << endl;
-                                    }
-                                }
-                                
-                                cout << endl;
-                                */
-                                
-                                
+                              
 //                                for(auto it = sessionList.begin(); it != sessionList.end(); it++)
 //                                {
 //                                    cout << it->first << " has connected clients: ";

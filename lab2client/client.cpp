@@ -12,7 +12,7 @@
  * - Double logging in
  * - Parsing issues (e.g. incorrect number of arguments)
  * - Case where user inputs multiple words for a session name
- * - Need to output reason for not joining session to client
+ * - Case where user can create multiple sessions and is also in all of them at the same time
  * 
  */
 
@@ -44,6 +44,8 @@
 #define CLIENT_LIST_STRING "Clients Online:"
 #define SESSION_LIST_STRING "Available Sessions:"
 
+#define SESSION_NOT_FOUND "NoSessionFound"
+
 #define MAXDATASIZE 1380 // max number of bytes we can get at once
 
 using namespace std;
@@ -59,6 +61,8 @@ enum msgType {
     JN_ACK,
     JN_NAK,
     LEAVE_SESS,
+    LS_ACK,
+    LS_NAK,
     NEW_SESS,
     NS_ACK,
     NS_NACK,
@@ -199,7 +203,10 @@ bool requestJoinSession(string sessionID)
 
     if(response == JN_NAK) 
     {
-        cout << "Error: Session '" << data << "' could not be joined" << endl;
+        if (data == SESSION_NOT_FOUND) cout << "Session could not be found" << endl;
+        
+        else cout << "User is already in session: '" << data << "'" << endl;
+        
         return false;
     }
     
@@ -209,6 +216,7 @@ bool requestJoinSession(string sessionID)
         return true;
     }
 }
+
 
 // Requests to make a new session and checks the server's response
 // Returns true if session was successfully created
@@ -266,7 +274,7 @@ void logout()
 }
 
 
-// This prints out a list of connected clients and available sessions from server 
+// Prints out list of connected clients and available sessions
 void printClientSessionList(string buffer)
 {
     // Get rid of type, data_size, and source, leaving just the list of clients and sessions
@@ -276,19 +284,21 @@ void printClientSessionList(string buffer)
 
     // Printing list of clients and sessions
     string data;
-    cout<<"list received :"<<buffer<<endl;
-    cout<<"size of list: "<<buffer.length()<<endl;
+    cout << "list received :" << buffer << endl;
+    cout << "size of list: " << buffer.length() << endl;
+    
     while(ss >> data)
     {
         if(data == SESSION_LIST_STRING || data == CLIENT_LIST_STRING) cout << endl;
         cout << data << endl;
     }
+   
     cout << endl;
 }
 
 
 // Sends a request to return the list of active clients and available sessions
-// Returns true if the list is successfully received
+// Returns session list if bool is true
 pair<bool, string> requestClientSessionList()
 {
     int numBytes, response;
@@ -474,7 +484,7 @@ int main(int argc, char** argv)
             }
             else
             {
-
+                
             }
         }
         else if (command == CMD_LEAVESESS)
