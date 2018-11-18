@@ -40,7 +40,7 @@
 
 // Inserted into data when sending the list of clients and sessions to a client
 #define CLIENT_LIST_STRING "Clients Online:"
-#define SESSION_LIST_STRING "Available Clients:"
+#define SESSION_LIST_STRING "Available Sessions:"
 
 #define MAXDATASIZE 1380 // max number of bytes we can get at once
 
@@ -222,6 +222,8 @@ void printClientSessionList(string buffer)
 
     // Printing list of clients and sessions
     string data;
+    cout<<"list received :"<<buffer<<endl;
+    cout<<"size of list: "<<buffer.length()<<endl;
     while(ss >> data)
     {
         if(data == SESSION_LIST_STRING || data == CLIENT_LIST_STRING) cout << endl;
@@ -257,6 +259,8 @@ pair<bool, string> requestClientSessionList()
         return make_pair(false, "NoList");
     }
     
+    cout<<"buffer: "<<buffer<<endl;
+    cout<<"numBytes: "<<numBytes<<endl;
     // Checking packet type
     string s(buffer);
     stringstream ss(s);
@@ -430,8 +434,11 @@ int main(int argc, char** argv)
         }
         else if (command == CMD_LIST)
         {
+            cout<<"list"<<endl;
             auto res = requestClientSessionList();
             if(res.first == true) printClientSessionList(res.second);
+            
+            
         }
         else
         {
