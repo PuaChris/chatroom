@@ -187,6 +187,17 @@ void acknowledgeLogin(int sockfd)
     sendToClient(&loginAck, sockfd);
 }
 
+void acknowledgeList(int sockfd, string buffer)
+{
+    struct message listAck;
+    listAck.type = QU_ACK;
+    listAck.size = buffer.length();
+    listAck.source = "SERVER";
+    listAck.data = buffer;
+    
+    sendToClient(&listAck, sockfd);
+}
+
 
 // Logs a client described by a file descriptor into the server
 // Returns true if successful
@@ -240,6 +251,22 @@ bool createSession(int sockfd, struct message packet)
         return true;
     }
     
+}
+
+void createList(int sockfd)
+{
+    string buffer = "Clients Online: ";
+    
+    for(auto it : clientList){
+        buffer += it.second.first + " ";
+    }
+    
+    buffer += "Available Sessions: ";
+    for(auto it : sessionList){
+        buffer += it.first + " ";
+    }
+    
+    acknowledgeList(sockfd, buffer);
 }
 
 
@@ -351,8 +378,9 @@ int main(int argc, char** argv)
                                 
                                 break;
 //                            case MESSAGE:
-//                            case QUERY:
-//                                QU_ACK
+                            case QUERY:
+                                createList(i);
+                                break;
                             default:
                                 cout << "Unknown packet type" << endl;
                                 break;
