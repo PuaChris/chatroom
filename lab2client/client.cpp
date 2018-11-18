@@ -13,7 +13,8 @@
  * - Parsing issues (e.g. incorrect number of arguments)
  * - Case where user inputs multiple words for a session name
  * - Case where user can create multiple sessions and is also in all of them at the same time
- * 
+ * - Note: when no one is in a session, the session still remains on the server side. 
+ *         Possibly have to delete that empty session
  */
 
 #include <cstdlib>
@@ -172,6 +173,7 @@ bool requestLogin(struct connectionDetails login)
     return true;
 }
 
+
 // Requests to join a session in the server and checks server's response
 // Returns true if joined session
 bool requestJoinSession(string sessionID)
@@ -203,7 +205,7 @@ bool requestJoinSession(string sessionID)
 
     if(response == JN_NAK) 
     {
-        if (data == SESSION_NOT_FOUND) cout << "Session could not be found" << endl;
+        if (data == SESSION_NOT_FOUND) cout << "Error: Session could not be found" << endl;
         
         else cout << "User is already in session: '" << data << "'" << endl;
         
@@ -215,6 +217,45 @@ bool requestJoinSession(string sessionID)
         cout << "Session '" << data << "' joined" << endl;
         return true;
     }
+}
+
+bool requestLeaveSession()
+{
+    char buffer[MAXDATASIZE];
+    int numBytes, response;
+    struct message joinSession;
+    joinSession.type = LEAVE_SESS;
+    joinSession.size = 0;
+    joinSession.source = login.clientID;
+    joinSession.data = "";
+    
+    // Sends login request to server
+    if(!sendToServer(&joinSession)){
+        return false;
+    }
+    
+    // Server response
+    if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
+    {
+        perror("recv");
+        return false;
+    }
+    
+    string s(buffer), temp, data;
+    stringstream ss(s);
+    ss >> response >> temp >> temp >> data;
+    
+    if (response == LS_NAK)
+    {
+        cout << "Error: User is not currently in a session" << endl;
+        return false;
+    }
+    else if (response == LS_ACK)
+    {
+        cout << "User has left the session '" << data << "'" << endl;
+        return true;
+    }
+    
 }
 
 
@@ -489,7 +530,13 @@ int main(int argc, char** argv)
         }
         else if (command == CMD_LEAVESESS)
         {
-            
+            if (requestLeaveSession() == true){
+                
+            }
+            else
+            {
+                
+            }
         }
         else if (command == CMD_CREATESESS)
         {

@@ -29,6 +29,7 @@
 #define SESSION_LIST_STRING "Available Clients:"
 
 #define SESSION_NOT_FOUND "NoSessionFound"
+#define ACK_DATA "NoData"
 
 #define BACKLOG 10       // How many pending connections queue will hold
 #define MAXDATASIZE 1380 // Max number of bytes we can get at once 
@@ -154,13 +155,13 @@ struct message messageFromPacket(const char* buf)
     stringstream ss(buffer);
     struct message packet;
     ss >> packet.type >> packet.size >> packet.source;
-    if(!(ss >> packet.data)) packet.data = "NoData";
+    if(!(ss >> packet.data)) packet.data = ACK_DATA;
     return packet;
 }
 
 
 // Return the sessionID that the sockfd is connected to
-// Returns "No session found" if session could not be found
+// Returns "NoSessionFound" if session could not be found
 string clientSockfdToSessionID (int sockfd)
 {
     
@@ -172,6 +173,7 @@ string clientSockfdToSessionID (int sockfd)
         }
     }
 
+    // Session could not be found 
     return SESSION_NOT_FOUND;
 }
 
@@ -285,18 +287,26 @@ bool leaveSession (int sockfd, struct message packet)
     struct message ack;
     ack.size = packet.size;
     ack.source = "SERVER";
-    ack.data = packet.data;
+
     
-    auto session = sessionList.find(packet.data);
-    if (session != sessionList.end())
+    
+    // Client can only leave a session if they are currently in one
+    // Else send back LS_NAK (Leave Session NACK)
+    string sessionID = clientSockfdToSessionID(sockfd);
+    if (sessionID != SESSION_NOT_FOUND)
     {
-        session -> second.insert(sockfd);
+        
+        auto currentSession = sessionList.find(sessionID);
+        currentSession -> second.erase(sockfd);
+        
+        ack.data = sessionID;
         ack.type = LS_ACK;
         sendToClient(&ack, sockfd);
         return true;
     }
     else 
     {
+        ack.data = ACK_DATA;
         ack.type = LS_NAK;
         sendToClient(&ack, sockfd);
         return false;
@@ -456,11 +466,13 @@ int main(int argc, char** argv)
                                 
                                
                                 //Printing out all connected clients, sessions, and socket numbers in each session
-                                /*
+                                
+                                cout << endl; 
+                                
                                 for (auto i = clientList.begin(); i != clientList.end(); i++)
                                 {
                                     cout << i -> first << " : " << i -> second.first << " : "
-                                         << i -> second.second << " : " << endl;
+                                         << i -> second.second << endl;
                                 }
                                 
                                 cout << endl;
@@ -474,7 +486,7 @@ int main(int argc, char** argv)
                                 }
                                 
                                 cout << endl;
-                                */
+                                
                                 
                                 break;
                                 
@@ -482,14 +494,36 @@ int main(int argc, char** argv)
                             case LEAVE_SESS:
                                 if (leaveSession(i ,packet) == true)
                                 {
-                                    cout << "Client '" << packet.source << "' left session '" 
+                                    cout << "Client '" << packet.source << "' has left session '" 
                                          << packet.data << endl;
                                 }
                                 else
                                 {
-                                    cout << "Client '" << packet.source << "' could not leave session '" 
-                                         << packet.data << endl;
+                                    cout << "Client '" << packet.source << "' is not in a session" 
+                                         << endl;
                                 }
+                                
+                                //Printing out all connected clients, sessions, and socket numbers in each session
+                                
+                                cout << endl; 
+                                
+                                for (auto i = clientList.begin(); i != clientList.end(); i++)
+                                {
+                                    cout << i -> first << " : " << i -> second.first << " : "
+                                         << i -> second.second << endl;
+                                }
+                                
+                                cout << endl;
+                                
+                                for (auto j = sessionList.begin(); j != sessionList.end(); j++)
+                                {
+                                    for (auto k = j -> second.begin(); k != j -> second.end(); k++)
+                                    {
+                                        cout << j -> first << " : " << *k << endl;
+                                    }
+                                }
+                                
+                                cout << endl;
                                 
                                 break;
                                 
@@ -505,7 +539,27 @@ int main(int argc, char** argv)
                                          << endl;
                                 }
                                                                 
+                                //Printing out all connected clients, sessions, and socket numbers in each session
                                 
+                                cout << endl;
+                                
+                                for (auto i = clientList.begin(); i != clientList.end(); i++)
+                                {
+                                    cout << i -> first << " : " << i -> second.first << " : "
+                                         << i -> second.second << endl;
+                                }
+                                
+                                cout << endl;
+                                
+                                for (auto j = sessionList.begin(); j != sessionList.end(); j++)
+                                {
+                                    for (auto k = j -> second.begin(); k != j -> second.end(); k++)
+                                    {
+                                        cout << j -> first << " : " << *k << endl;
+                                    }
+                                }
+                                
+                                cout << endl;
                               
 //                                for(auto it = sessionList.begin(); it != sessionList.end(); it++)
 //                                {
