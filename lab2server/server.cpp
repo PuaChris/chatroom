@@ -41,6 +41,7 @@ enum msgType {
     LOGIN,
     LO_ACK,
     LO_NAK,
+    LO_DUP,
     EXIT,
     JOIN,
     JN_ACK,
@@ -207,6 +208,17 @@ void acknowledgeLogin(int sockfd)
     sendToClient(&loginAck, sockfd);
 }
 
+void acknowledgeDuplicateLogin(int sockfd)
+{
+    struct message loginDupAck;
+    loginDupAck.type = LO_DUP;
+    loginDupAck.size = 0;
+    loginDupAck.source = "SERVER";
+    loginDupAck.data = "";
+    
+    sendToClient(&loginDupAck, sockfd);
+}
+
 
 // Logs a client described by a file descriptor into the server
 // Returns true if successful
@@ -228,6 +240,15 @@ bool loginClient(int sockfd)
         stringstream ss(s);
         ss >> loginInfo.type >> loginInfo.size
            >> loginInfo.source >> loginInfo.data;
+    }
+
+    for (auto it : clientList) {
+        //possibility of duplicate login
+        if (loginInfo.source == it.second.first) {
+            //if(loginInfo.data == it.second.second)
+            acknowledgeDuplicateLogin(sockfd);
+            return false;
+        }
     }
     
     clientList.insert(make_pair(sockfd, make_pair(loginInfo.source, loginInfo.data)));
