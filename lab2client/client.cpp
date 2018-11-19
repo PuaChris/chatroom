@@ -57,6 +57,7 @@ enum msgType {
     LOGIN,
     LO_ACK,
     LO_NAK,
+    LO_DUP,
     EXIT,
     JOIN,
     JN_ACK,
@@ -166,13 +167,13 @@ bool requestLogin(struct connectionDetails login)
     stringstream ss(s);
     ss >> response;
     
-    if(response == LO_ACK)
-    {
+    if (response == LO_ACK) {
         cout << "Login successful!" << endl;
         return true;
-    }
-    else
-    {
+    } else if (response == LO_DUP) {
+        cout << "You already logged in!" << endl;
+        return false;
+    } else {
         cout << "Login failed!" << endl;
         return false;
     }
@@ -502,7 +503,18 @@ int main(int argc, char** argv)
                 // If connection created and login info sent successfully
                 if(sockfd != -1 && requestLogin(login)) loggedIn = true;
             }
-            else cout << "Already logged in!" << endl;
+            else {
+                // Get login information
+                ss >> login.clientID >> login.clientPassword
+                        >> login.serverIP >> login.serverPort;
+
+                // Create connection and get file descriptor
+                sockfd = createConnection();
+
+                if(sockfd != -1 && requestLogin(login)) loggedIn = true;
+
+                //cout << "Already logged in!" << endl;
+            }
             
         }
         else if(command == CMD_LOGOUT)
