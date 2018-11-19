@@ -163,7 +163,7 @@ struct message messageFromPacket(const char* buf)
     stringstream ss(buffer);
     struct message packet;
     ss >> packet.type >> packet.size >> packet.source;
-    if(!(ss >> packet.data)) packet.data = ACK_DATA;
+    if(!getline(ss, packet.data)) packet.data = ACK_DATA;
     return packet;
 }
 
@@ -192,6 +192,8 @@ bool sendToClient(struct message *data, int sockfd)
     int numBytes;
     string dataStr = stringifyMessage(data);
 
+    cout << dataStr << endl;
+    
     if(dataStr.length() + 1 > MAXDATASIZE) return false;
     if((numBytes = send(sockfd, dataStr.c_str(), dataStr.length() + 1, 0)) == -1)
     {
@@ -427,7 +429,7 @@ void acknowledgeList(int sockfd, string buffer)
 {
     struct message listAck;
     listAck.type = QU_ACK;
-    listAck.size = buffer.length();
+    listAck.size = buffer.length() + 1;
     listAck.source = "SERVER";
     listAck.data = buffer;
     
@@ -521,6 +523,17 @@ int main(int argc, char** argv)
                         {
                             printf("server: socket %d hung up\n", i);
                             clientList.erase(i);
+                            
+                            string sessionID = clientSockfdToSessionID(i);
+                            if(sessionID != SESSION_NOT_FOUND)
+                            {
+                                auto session = sessionList.find(sessionID);
+                                session->second.erase(i);
+                                if(session->second.empty())
+                                {
+                                    sessionList.erase(session);
+                                }
+                            }
                         }
                         else perror("recv");
                         
@@ -573,7 +586,25 @@ int main(int argc, char** argv)
                                          << endl;
                                 }     
                                 break;
-//                            case MESSAGE:
+                            case MESSAGE:
+                            {
+                                // Get list of clients connected in the session with the sender
+                                string sessionID = clientSockfdToSessionID(i);
+                                unordered_set<int> session;
+                                if(sessionID != SESSION_NOT_FOUND)
+                                {
+                                    session = sessionList.find(sessionID)->second;
+                                }
+                                
+                                // Send message to all clients in the session (excluding the sender)
+                                for(auto const & clientSockfd : session)
+                                {
+                                    if(clientSockfd != i) sendToClient(&packet, clientSockfd);
+                                }
+                                
+                                cout << "Message sent to session '" << sessionID << "'" << endl;
+                                break;
+                            }
                             case QUERY:
                                 createList(i);
                                 break;

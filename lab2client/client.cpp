@@ -126,7 +126,7 @@ bool sendToServer(struct message *data)
 {
     int numBytes;
     string dataStr = stringifyMessage(data);
-
+    
     if(dataStr.length() + 1 > MAXDATASIZE) return false;
     if((numBytes = send(sockfd, dataStr.c_str(), dataStr.length() + 1, 0)) == -1)
     {
@@ -345,8 +345,6 @@ void printClientSessionList(string buffer)
     // Printing list of clients and sessions
     string data;
     
-    cout << endl;
-    
     while(ss >> data)
     {
         if(data == "Clients" || data == "Available") 
@@ -387,7 +385,6 @@ pair<bool, string> requestClientSessionList()
         return make_pair(false, "NoList");
     }
     
-
     // Checking packet type
     string s(buffer);
     stringstream ss(s);
@@ -464,6 +461,19 @@ int createConnection()
 }
 
 
+void sendMessage(string message)
+{
+    // Prepare message
+    struct message sessMessage;
+    sessMessage.type = MESSAGE;
+    sessMessage.size = message.length() + 1;
+    sessMessage.source = login.clientID;
+    sessMessage.data = message;
+    
+    if(!sendToServer(&sessMessage)) cout << "Message not sent!" << endl;
+}
+
+
 int main(int argc, char** argv)
 {
     if (argc != 1)
@@ -471,6 +481,15 @@ int main(int argc, char** argv)
         fprintf(stderr, "usage: client\n");
         exit(1);
     }
+    
+    fd_set master, read_fds; // WIll hold descriptors for connection and stdin
+    int fdmax;
+    
+    FD_ZERO(&master);
+    FD_ZERO(&read_fds);
+    FD_SET(STDIN_FILENO, &master); // File descriptor for standard input
+    
+    fdmax = STDIN_FILENO;
 
     /********************** GET LOGIN/CONNECTION INFO *************************/
 
@@ -479,119 +498,182 @@ int main(int argc, char** argv)
 
     while(1)
     {
-        cout << ">>";
-        // Create stringstream to extract login input from user
-        string input, command;
-        getline(cin, input);
-        stringstream ss(input);
-        
-        ss >> command;
+        read_fds = master; // copy master list
+        if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1)
+        {
+            perror("select");
+            exit(4);
+        }
 
-        if (command == CMD_LOGIN)
+        for(int i = 0; i <= fdmax; i++)
         {
-            if(!loggedIn)
+            if (FD_ISSET(i, &read_fds))
             {
-                // Get login information
-                ss >> login.clientID >> login.clientPassword
-                   >> login.serverIP >> login.serverPort;
+                if(i == sockfd) // Message from the server
+                {
+                    int nbytes;
+                    char buf[MAXDATASIZE];
 
-                // Create connection and get file descriptor
-                sockfd = createConnection();
+                    // Got error or connection closed by server
+                    if ((nbytes = recv(i, buf, MAXDATASIZE, 0)) <= 0)
+                    {
+                        if (nbytes == 0) // Connection closed
+                        {
+                            cout << "Server closed! Goodbye!" << endl;
+                        }
+                        else perror("recv");
+                        
+                        close(i);
+                        FD_CLR(i, &master); // remove from master set
+                        return 0;
+                    }
+                    else // Received data
+                    {
+                        string received(buf), temp, source, message;
+                        stringstream ss(received);
+                        ss >> temp >> temp >> source;
+                        
+                        getline(ss, message);
+                        message.erase(0, 1); // Remove extra space from getline
 
-                // If connection created and login info sent successfully
-                if(sockfd != -1 && requestLogin(login)) loggedIn = true;
+                        cout << source << ": " << message << endl;
+                    }
+                }
+                else // Only 2 descriptors in set, so this is stdin
+                {
+                    // Create stringstream to extract login input from user
+                    string input, command;
+                    getline(cin, input);
+                    stringstream ss(input);
+
+                    ss >> command;
+
+                    if (command == CMD_LOGIN)
+                    {
+                        if(!loggedIn)
+                        {
+                            // Get login information
+                            ss >> login.clientID >> login.clientPassword
+                               >> login.serverIP >> login.serverPort;
+
+                            // Create connection and get file descriptor
+                            sockfd = createConnection();
+
+                            // If connection created and login info sent successfully
+                            if(sockfd != -1 && requestLogin(login))
+                            {
+                                FD_SET(sockfd, &master);
+                                if(sockfd > fdmax) fdmax = sockfd;
+                                loggedIn = true;
+                            }
+                        }
+                        else {
+                            // Get login information
+                            ss >> login.clientID >> login.clientPassword
+                                    >> login.serverIP >> login.serverPort;
+
+                            // Create connection and get file descriptor
+                            sockfd = createConnection();
+
+                            if(sockfd != -1 && requestLogin(login)) loggedIn = true;
+
+                            //cout << "Already logged in!" << endl;
+                        }
+
+                    }
+                    else if(command == CMD_LOGOUT)
+                    {
+                        if(inSession)
+                        {
+                            cout << "Please leave the session before logging out!" << endl;
+                        }
+                        else if(loggedIn)
+                        {
+                            logout();
+                            loggedIn = false;
+
+                            cout << "Closing connection" << endl;
+                            close(sockfd);
+                        }
+                        else cout << "Please login" << endl;
+                    }
+                    else if(command == CMD_QUIT)
+                    {
+                        if(inSession)
+                        {
+                            cout << "Please leave the session before quitting!" << endl;
+                        }
+                        else if(loggedIn)
+                        {
+                            logout();
+                            loggedIn = false;
+
+                            cout << "Closing connection" << endl;
+                            close(sockfd);
+                        }
+                        else exit(1);
+                    }
+                    else if(!loggedIn) // Cannot enter any other command before logging in
+                    {
+                        cout << "Please login" << endl;
+                    }
+                    else if (command == CMD_JOINSESS)
+                    {
+                        string sessionID;
+                        ss >> sessionID;
+                        if(requestJoinSession(sessionID))
+                        {
+                            inSession = true;
+                        }
+                    }
+                    else if (command == CMD_LEAVESESS)
+                    {
+                        if(requestLeaveSession())
+                        {
+                            inSession = false;
+                        }
+                    }
+                    else if (command == CMD_CREATESESS)
+                    {
+                        string sessionID;
+                        ss >> sessionID;
+                        if(requestNewSession(sessionID))
+                        {
+                            inSession = true;
+                        }
+                    }
+                    else if (command == CMD_LIST)
+                    {
+                        if(inSession)
+                        {
+                            cout << "Please leave the session before listing connected "
+                                    "clients and available sessions!" << endl;
+                        }
+                        else
+                        {
+                            auto res = requestClientSessionList();
+                            if(res.first == true) printClientSessionList(res.second);
+                        }
+                    }
+                    else
+                    {
+                        if(!inSession)
+                        {
+                            cout << "Unknown command" << endl;
+                        }
+                        else
+                        {
+                            // Send message to the server to send to all clients in the session
+                            string message;
+                            getline(ss, message);
+                            message.insert(0, command); // Command is part of the message
+                            
+                            sendMessage(message);
+                        }
+                    }
+                }
             }
-            
-            else cout << "Already logged in!" << endl;
-            
-            
         }
-        else if(command == CMD_LOGOUT)
-        {
-            if(inSession)
-            {
-                cout << "Please leave the session before logging out!" << endl;
-            }
-            else if(loggedIn)
-            {
-                logout();
-                loggedIn = false;
-                
-                cout << "Closing connection" << endl;
-                close(sockfd);
-            }
-            else cout << "Please login" << endl;
-        }
-        else if(command == CMD_QUIT)
-        {
-            if(inSession)
-            {
-                cout << "Please leave the session before quitting!" << endl;
-            }
-            else if(loggedIn)
-            {
-                logout();
-                loggedIn = false;
-                
-                cout << "Closing connection" << endl;
-                close(sockfd);
-            }
-            else exit(1);
-        }
-        else if(!loggedIn) // Cannot enter any other command before logging in
-        {
-            cout << "Please login" << endl;
-        }
-        else if (command == CMD_JOINSESS)
-        {
-            string sessionID;
-            ss >> sessionID;
-            if(requestJoinSession(sessionID))
-            {
-                inSession = true;
-            }
-        }
-        else if (command == CMD_LEAVESESS)
-        {
-            if(requestLeaveSession())
-            {
-                inSession = false;
-            }
-        }
-        else if (command == CMD_CREATESESS)
-        {
-            string sessionID;
-            ss >> sessionID;
-            if(requestNewSession(sessionID))
-            {
-                inSession = true;
-            }
-        }
-        else if (command == CMD_LIST)
-        {
-            if(inSession)
-            {
-                cout << "Please leave the session before listing connected "
-                        "clients and available sessions!" << endl;
-            }
-            else
-            {
-                auto res = requestClientSessionList();
-                if(res.first == true) printClientSessionList(res.second);
-            }
-        }
-        else
-        {
-            if(!inSession)
-            {
-                cout << "Unknown command" << endl;
-            }
-            else
-            {
-                // Send the message to the current session
-            }
-        }
-        
         cout << endl;
     }
     return 0;
