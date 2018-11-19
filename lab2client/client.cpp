@@ -586,7 +586,7 @@ int main(int argc, char** argv)
                             // Get login information
                             ss >> login.clientID >> login.clientPassword
                                >> login.serverIP >> login.serverPort;
-
+                            
                             // Create connection and get file descriptor
                             sockfd = createConnection();
 

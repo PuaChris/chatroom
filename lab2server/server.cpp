@@ -468,6 +468,11 @@ int main(int argc, char** argv)
 
     char remoteIP[INET6_ADDRSTRLEN];
 
+    if(atoi(argv[1]) > 65535)
+    {
+        cout << "Choose a valid port!" << endl;
+        return 0;
+    }
     int listener = createListenerSocket(argv[1]);
     
     // Clear master and temp sets and add the listener socket to master
