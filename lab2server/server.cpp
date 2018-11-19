@@ -41,7 +41,6 @@ enum msgType {
     LOGIN,
     LO_ACK,
     LO_NAK,
-    LO_DUP,
     EXIT,
     JOIN,
     JN_ACK,
@@ -66,6 +65,12 @@ struct message {
     string data;
 };
 
+
+unordered_map<string, string> permittedClientList({
+    {"sadman", "ahmed"},
+    {"eliano", "anile"},
+    {"chris", "pua"}
+}); 
 
 // Key is file descriptor, value is client username and password
 unordered_map<int, pair<string, string>> clientList;
@@ -208,15 +213,8 @@ void acknowledgeLogin(int sockfd)
     sendToClient(&loginAck, sockfd);
 }
 
-void acknowledgeDuplicateLogin(int sockfd)
-{
-    struct message loginDupAck;
-    loginDupAck.type = LO_DUP;
-    loginDupAck.size = 0;
-    loginDupAck.source = "SERVER";
-    loginDupAck.data = "";
-    
-    sendToClient(&loginDupAck, sockfd);
+bool canUserConnect(string userID) {
+    return (permittedClientList.find(userID) != permittedClientList.end());
 }
 
 
@@ -228,6 +226,10 @@ bool loginClient(int sockfd)
     char buffer[MAXDATASIZE];
     int numBytes;
     struct message loginInfo;
+    struct message ack;
+    ack.size = 0;
+    ack.source = "SERVER";
+    ack.data = ACK_DATA;
     
     if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
     {
@@ -241,19 +243,24 @@ bool loginClient(int sockfd)
         ss >> loginInfo.type >> loginInfo.size
            >> loginInfo.source >> loginInfo.data;
     }
-
-    for (auto it : clientList) {
-        //possibility of duplicate login
-        if (loginInfo.source == it.second.first) {
-            //if(loginInfo.data == it.second.second)
-            acknowledgeDuplicateLogin(sockfd);
-            return false;
-        }
+    
+    
+    if (canUserConnect(loginInfo.source) == false)
+    {
+        ack.type = LO_NAK;
+        sendToClient(&ack, sockfd);
+        return false;
     }
     
-    clientList.insert(make_pair(sockfd, make_pair(loginInfo.source, loginInfo.data)));
-    acknowledgeLogin(sockfd);
-    return true;
+    else
+    {
+        ack.type = LO_ACK;
+        clientList.insert(make_pair(sockfd, make_pair(loginInfo.source, loginInfo.data)));
+        sendToClient(&ack, sockfd);
+        return true;
+    }
+    
+
 }
 
 
