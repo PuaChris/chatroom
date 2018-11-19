@@ -173,11 +173,22 @@ bool requestLogin(struct connectionDetails login)
     } 
     else 
     {
-        cout << "Error: User is not on the list of permitted clients" << endl;
+        cout << "Error: User cannot log in" << endl;
         return false;
     }
 }
 
+// Sends the logout request to the server
+void logout()
+{
+    struct message info;
+    info.type = EXIT;
+    info.size = 0;
+    info.source = login.clientID;
+    info.data = "";
+    
+    if(sendToServer(&info)) cout << "Logout successful!" << endl;
+}
 
 // Requests to join a session in the server and checks server's response
 // Returns true if session is joined
@@ -250,9 +261,7 @@ bool requestLeaveSession()
         perror("recv");
         return false;
     }
-    
-    cout << buffer << endl;
-    
+        
     string s(buffer), temp, data;
     stringstream ss(s);
     ss >> response >> temp >> temp;
@@ -325,19 +334,6 @@ bool requestNewSession(string sessionID)
 }
 
 
-// Sends the logout request to the server
-void logout()
-{
-    struct message info;
-    info.type = EXIT;
-    info.size = 0;
-    info.source = login.clientID;
-    info.data = "";
-    
-    if(sendToServer(&info)) cout << "Logout successful!" << endl;
-}
-
-
 // Prints out list of connected clients and available sessions
 void printClientSessionList(string buffer)
 {
@@ -348,16 +344,20 @@ void printClientSessionList(string buffer)
 
     // Printing list of clients and sessions
     string data;
-    cout << "list received :" << buffer << endl;
-    cout << "size of list: " << buffer.length() << endl;
+    
+    cout << endl;
     
     while(ss >> data)
     {
-        if(data == SESSION_LIST_STRING || data == CLIENT_LIST_STRING) cout << endl;
+        if(data == "Clients" || data == "Available") 
+        {
+            if (data == "Available") cout << endl;
+            cout << data << " ";
+            ss >> data;
+        }
         cout << data << endl;
     }
    
-    cout << endl;
 }
 
 
@@ -387,8 +387,7 @@ pair<bool, string> requestClientSessionList()
         return make_pair(false, "NoList");
     }
     
-    cout<<"buffer: "<<buffer<<endl;
-    cout<<"numBytes: "<<numBytes<<endl;
+
     // Checking packet type
     string s(buffer);
     stringstream ss(s);

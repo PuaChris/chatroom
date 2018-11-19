@@ -65,7 +65,8 @@ struct message {
     string data;
 };
 
-
+// Keeps a list of all users that are permitted to login. Has a boolean if 
+// user is already logged in or not
 unordered_map<string, string> permittedClientList({
     {"sadman", "ahmed"},
     {"eliano", "anile"},
@@ -213,8 +214,21 @@ void acknowledgeLogin(int sockfd)
     sendToClient(&loginAck, sockfd);
 }
 
+// Checks if the user can login to the server
 bool canUserConnect(string userID) {
-    return (permittedClientList.find(userID) != permittedClientList.end());
+    // Checks if the user is on the list of permitted clients
+    if (permittedClientList.find(userID) != permittedClientList.end())
+    {
+        // Checks if the user is already logged in 
+        for (auto client = clientList.begin(); client != clientList.end(); client++)
+        {
+            if (client -> second.first == userID){
+                return false;
+            }
+        }
+        return true; 
+    }
+    return false;
 }
 
 
@@ -423,13 +437,14 @@ void acknowledgeList(int sockfd, string buffer)
 
 void createList(int sockfd)
 {
-    string buffer = "Clients Online: ";
+    string buffer = "\nClients Online: ";
     
     for(auto it : clientList){
         buffer += it.second.first + " ";
     }
     
-    buffer += "Available Sessions: ";
+    
+    buffer += "\nAvailable Sessions: ";
     for(auto it : sessionList){
         buffer += it.first + " ";
     }
