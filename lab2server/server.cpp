@@ -24,10 +24,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// Inserted into data when sending the list of clients and sessions to a client
-#define CLIENT_LIST_STRING "Clients Online:"
-#define SESSION_LIST_STRING "Available Clients:"
-
 #define SESSION_NOT_FOUND "No session found!"
 #define ACK_DATA "NoData"
 
@@ -131,7 +127,7 @@ int createListenerSocket(const char* portNum)
 
     // if we got here, it means we didn't get bound
     if (p == NULL) {
-        fprintf(stderr, "selectserver: failed to bind\n");
+        fprintf(stderr, "server: failed to bind\n");
         exit(2);
     }
 
@@ -192,8 +188,6 @@ bool sendToClient(struct message *data, int sockfd)
     int numBytes;
     string dataStr = stringifyMessage(data);
 
-    cout << dataStr << endl;
-    
     if(dataStr.length() + 1 > MAXDATASIZE) return false;
     if((numBytes = send(sockfd, dataStr.c_str(), dataStr.length() + 1, 0)) == -1)
     {
@@ -217,7 +211,9 @@ void acknowledgeLogin(int sockfd)
 }
 
 // Checks if the user can login to the server
-bool canUserConnect(string userID) {
+// If not, string returned is reason for error
+pair<bool, string> canUserConnect(string userID)
+{
     // Checks if the user is on the list of permitted clients
     if (permittedClientList.find(userID) != permittedClientList.end())
     {
@@ -225,12 +221,12 @@ bool canUserConnect(string userID) {
         for (auto client = clientList.begin(); client != clientList.end(); client++)
         {
             if (client -> second.first == userID){
-                return false;
+                return make_pair(false, "User is already logged in!");
             }
         }
-        return true; 
+        return make_pair(true, ACK_DATA); 
     }
-    return false;
+    return make_pair(false, "Username does not exist!");
 }
 
 
@@ -260,18 +256,27 @@ bool loginClient(int sockfd)
            >> loginInfo.source >> loginInfo.data;
     }
     
-    
-    if (canUserConnect(loginInfo.source) == false)
+    // Check if user is permitted to connect to the server
+    pair<bool, string> userConnectReq = canUserConnect(loginInfo.source);
+    if (userConnectReq.first == false)
     {
+        // Send back reason for error
         ack.type = LO_NAK;
+        ack.data = userConnectReq.second;
+        ack.size = ack.data.length() + 1;
+        
         sendToClient(&ack, sockfd);
         return false;
     }
     
     else
     {
-        ack.type = LO_ACK;
+        // Client can login, add it to the list of active clients
         clientList.insert(make_pair(sockfd, make_pair(loginInfo.source, loginInfo.data)));
+        
+        // No data sent back
+        ack.type = LO_ACK;
+        
         sendToClient(&ack, sockfd);
         return true;
     }
@@ -475,7 +480,7 @@ int main(int argc, char** argv)
 
     // Main loop
     while(1)
-    {
+    {        
         read_fds = master; // copy master list
         if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1)
         {
@@ -508,6 +513,10 @@ int main(int argc, char** argv)
                                     remoteIP, INET6_ADDRSTRLEN),
                                     newfd);
                         }
+                        else
+                        {
+                            close(newfd);
+                        }
                     }             
                 }
                 
@@ -522,8 +531,9 @@ int main(int argc, char** argv)
                         if (nbytes == 0) // Connection closed
                         {
                             printf("server: socket %d hung up\n", i);
-                            clientList.erase(i);
+                            clientList.erase(i); // Remove client
                             
+                            // Remove client from a session
                             string sessionID = clientSockfdToSessionID(i);
                             if(sessionID != SESSION_NOT_FOUND)
                             {
@@ -609,7 +619,6 @@ int main(int argc, char** argv)
                                 createList(i);
                                 break;
                             default:
-                                cout << "Unknown packet type" << endl;
                                 break;
                         }
                     }

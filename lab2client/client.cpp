@@ -32,6 +32,7 @@
 #include <sys/socket.h>
 #include <signal.h>
 #include <arpa/inet.h>
+#include <iterator>
 
 #define CMD_LOGIN      "/login"
 #define CMD_LOGOUT     "/logout"
@@ -40,10 +41,6 @@
 #define CMD_CREATESESS "/createsession"
 #define CMD_LIST       "/list"
 #define CMD_QUIT       "/quit"
-
-// Inserted into data when sending the list of clients and sessions to a client
-#define CLIENT_LIST_STRING "Clients Online:"
-#define SESSION_LIST_STRING "Available Sessions:"
 
 #define SESSION_NOT_FOUND "NoSessionFound"
 
@@ -166,14 +163,24 @@ bool requestLogin(struct connectionDetails login)
     stringstream ss(s);
     ss >> response >> temp >> temp >> data;
     
-    if (response == LO_ACK) 
+    if(response == LO_NAK)
+    {
+        // Get the rest of the error message
+        string restOfData;
+        getline(ss, restOfData);
+        data += restOfData;
+        
+        cout << "Error: " << data << endl;
+        return false;
+    }
+    else if(response == LO_ACK) 
     {
         cout << "Login successful!" << endl;
         return true;
     } 
-    else 
+    else
     {
-        cout << "Error: User cannot log in" << endl;
+        cout << "login: unknown message type received" << endl;
         return false;
     }
 }
@@ -217,11 +224,15 @@ bool requestJoinSession(string sessionID)
     // Checking packet type
     string s(buffer), temp, data;
     stringstream ss(s);
-    ss >> response >> temp >> temp;
-    getline(ss, data); // Get the rest of stream into data
+    ss >> response >> temp >> temp >> data;
     
     if(response == JN_NAK) 
     {
+        // Get the rest of the error message
+        string restOfData;
+        getline(ss, restOfData);
+        data += restOfData;
+        
         cout << "Error: " << data << endl;
         return false;
     }
@@ -232,7 +243,7 @@ bool requestJoinSession(string sessionID)
     }
     else
     {
-        cout << "Unknown message type received" << endl;
+        cout << "joinsession: unknown message type received" << endl;
         return false;
     }
 }
@@ -264,11 +275,16 @@ bool requestLeaveSession()
         
     string s(buffer), temp, data;
     stringstream ss(s);
-    ss >> response >> temp >> temp;
-    getline(ss, data); // Get the rest of stream into data
+    ss >> response >> temp >> temp >> data;
+
     
     if (response == LS_NAK)
     {
+        // Get the rest of the error message
+        string restOfData;
+        getline(ss, restOfData);
+        data += restOfData;
+        
         cout << "Error: " << data << endl;
         return false;
     }
@@ -279,7 +295,7 @@ bool requestLeaveSession()
     }
     else
     {
-        cout << "Unknown message type received" << endl;
+        cout << "leavesession: unknown message type received" << endl;
         return false;
     }
 }
@@ -312,23 +328,28 @@ bool requestNewSession(string sessionID)
     // Checking packet type
     string s(buffer), temp, data;
     stringstream ss(s);
-    ss >> response >> temp >> temp;
-    getline(ss, data); // Get the rest of stream into data
+    ss >> response >> temp >> temp >> data;
 
     if(response == NS_NAK) 
     {
+        // Get the rest of the error message
+        string restOfData;
+        getline(ss, restOfData);
+        data += restOfData;
+        
         cout << "Error: " << data << endl;
         return false;
     }
     
     else if(response == NS_ACK)
     {
+        
         cout << "Session '" << data << "' created!" << endl;
         return true;
     }
     else
     {
-        cout << "Unknown message type received" << endl;
+        cout << "newsession: unknown message type received" << endl;
         return false;
     }
 }
@@ -345,6 +366,7 @@ void printClientSessionList(string buffer)
     // Printing list of clients and sessions
     string data;
     
+    cout << endl;
     while(ss >> data)
     {
         if(data == "Clients" || data == "Available") 
@@ -473,6 +495,12 @@ void sendMessage(string message)
     if(!sendToServer(&sessMessage)) cout << "Message not sent!" << endl;
 }
 
+// Returns the number of arguments in a string
+unsigned int countNumArguments(std::string const& str)
+{
+    stringstream stream(str);
+    return distance(istream_iterator<string>(stream), istream_iterator<string>());
+}
 
 int main(int argc, char** argv)
 {
@@ -497,7 +525,7 @@ int main(int argc, char** argv)
             "/login <client_id> <password> <server-IP> <server-port>\n" << endl;
 
     while(1)
-    {
+    {        
         read_fds = master; // copy master list
         if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1)
         {
@@ -537,6 +565,7 @@ int main(int argc, char** argv)
                         message.erase(0, 1); // Remove extra space from getline
 
                         cout << source << ": " << message << endl;
+                        //cout.flush();
                     }
                 }
                 else // Only 2 descriptors in set, so this is stdin
@@ -550,7 +579,9 @@ int main(int argc, char** argv)
 
                     if (command == CMD_LOGIN)
                     {
-                        if(!loggedIn)
+                        unsigned int numArguments = countNumArguments(input) - 1;
+                        if(numArguments != 4) cout << "Incorrect number of arguments!" << endl;
+                        else if(!loggedIn)
                         {
                             // Get login information
                             ss >> login.clientID >> login.clientPassword
@@ -566,24 +597,20 @@ int main(int argc, char** argv)
                                 if(sockfd > fdmax) fdmax = sockfd;
                                 loggedIn = true;
                             }
+                            else
+                            {
+                                close(sockfd);
+                                sockfd = -1;
+                            }
                         }
-                        else {
-                            // Get login information
-                            ss >> login.clientID >> login.clientPassword
-                                    >> login.serverIP >> login.serverPort;
-
-                            // Create connection and get file descriptor
-                            sockfd = createConnection();
-
-                            if(sockfd != -1 && requestLogin(login)) loggedIn = true;
-
-                            //cout << "Already logged in!" << endl;
-                        }
-
+                        else cout << "Already logged in!" << endl;
+                        cout << endl;
                     }
                     else if(command == CMD_LOGOUT)
                     {
-                        if(inSession)
+                        unsigned int numArguments = countNumArguments(input) - 1;
+                        if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
+                        else if(inSession)
                         {
                             cout << "Please leave the session before logging out!" << endl;
                         }
@@ -594,12 +621,16 @@ int main(int argc, char** argv)
 
                             cout << "Closing connection" << endl;
                             close(sockfd);
+                            FD_CLR(sockfd, &master); // remove from master set
                         }
                         else cout << "Please login" << endl;
+                        cout << endl;
                     }
                     else if(command == CMD_QUIT)
                     {
-                        if(inSession)
+                        unsigned int numArguments = countNumArguments(input) - 1;
+                        if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
+                        else if(inSession)
                         {
                             cout << "Please leave the session before quitting!" << endl;
                         }
@@ -610,41 +641,62 @@ int main(int argc, char** argv)
 
                             cout << "Closing connection" << endl;
                             close(sockfd);
+                            FD_CLR(sockfd, &master); // remove from master set
+
                         }
                         else exit(1);
+                        cout << endl;
                     }
                     else if(!loggedIn) // Cannot enter any other command before logging in
                     {
                         cout << "Please login" << endl;
+                        cout << endl;
                     }
                     else if (command == CMD_JOINSESS)
                     {
-                        string sessionID;
-                        ss >> sessionID;
-                        if(requestJoinSession(sessionID))
+                        unsigned int numArguments = countNumArguments(input) - 1;
+                        if(numArguments != 1) cout << "Incorrect number of arguments!" << endl;
+                        else
                         {
-                            inSession = true;
+                            string sessionID;
+                            ss >> sessionID;
+                            if(requestJoinSession(sessionID))
+                            {
+                                inSession = true;
+                            }
                         }
+                        cout << endl;
                     }
                     else if (command == CMD_LEAVESESS)
                     {
-                        if(requestLeaveSession())
+                        unsigned int numArguments = countNumArguments(input) - 1;
+                        if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
+                        else if(requestLeaveSession())
                         {
                             inSession = false;
                         }
+                        cout << endl;
                     }
                     else if (command == CMD_CREATESESS)
                     {
-                        string sessionID;
-                        ss >> sessionID;
-                        if(requestNewSession(sessionID))
+                        unsigned int numArguments = countNumArguments(input) - 1;
+                        if(numArguments != 1) cout << "Incorrect number of arguments!" << endl;
+                        else
                         {
-                            inSession = true;
+                            string sessionID;
+                            ss >> sessionID;
+                            if(requestNewSession(sessionID))
+                            {
+                                inSession = true;
+                            }
                         }
+                        cout << endl;
                     }
                     else if (command == CMD_LIST)
                     {
-                        if(inSession)
+                        unsigned int numArguments = countNumArguments(input) - 1;
+                        if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
+                        else if(inSession)
                         {
                             cout << "Please leave the session before listing connected "
                                     "clients and available sessions!" << endl;
@@ -654,12 +706,14 @@ int main(int argc, char** argv)
                             auto res = requestClientSessionList();
                             if(res.first == true) printClientSessionList(res.second);
                         }
+                        cout << endl;
                     }
                     else
                     {
                         if(!inSession)
                         {
                             cout << "Unknown command" << endl;
+                            cout << endl;
                         }
                         else
                         {
@@ -674,7 +728,6 @@ int main(int argc, char** argv)
                 }
             }
         }
-        cout << endl;
     }
     return 0;
 }
