@@ -372,10 +372,10 @@ void printClientSessionList(string buffer)
         if(data == "Clients" || data == "Available") 
         {
             if (data == "Available") cout << endl;
-            cout << data << " ";
+            cout << data;
             ss >> data;
         }
-        cout << data << endl;
+        cout << " " << data << endl;
     }
    
 }
