@@ -66,7 +66,7 @@ enum msgType {
     LS_NAK,
     NEW_SESS,
     NS_ACK,
-    NS_NACK,
+    NS_NAK,
     MESSAGE,
     QUERY,
     QU_ACK
@@ -93,9 +93,10 @@ struct connectionDetails {
 
 
 // GLOBAL VARIABLES
-int sockfd;                     // Socket used to communicate with server
+int sockfd = -1;                // Socket used to communicate with server
 struct connectionDetails login; // Holds login details pertaining to this client
 bool loggedIn = false;          // Keep track of if this client is logged in
+bool inSession = false;         // Keep track of it this client is in a session
 
 
 // Get sockaddr, IPv4 or IPv6:
@@ -165,17 +166,21 @@ bool requestLogin(struct connectionDetails login)
     stringstream ss(s);
     ss >> response;
     
-    if(response != LO_ACK)
+    if(response == LO_ACK)
+    {
+        cout << "Login successful!" << endl;
+        return true;
+    }
+    else
     {
         cout << "Login failed!" << endl;
         return false;
     }
-    return true;
 }
 
 
 // Requests to join a session in the server and checks server's response
-// Returns true if joined session
+// Returns true if session is joined
 bool requestJoinSession(string sessionID)
 {
     char buffer[MAXDATASIZE];
@@ -201,36 +206,41 @@ bool requestJoinSession(string sessionID)
     // Checking packet type
     string s(buffer), temp, data;
     stringstream ss(s);
-    ss >> response >> temp >> temp >> data;
+    ss >> response >> temp >> temp;
+    getline(ss, data); // Get the rest of stream into data
 
     if(response == JN_NAK) 
     {
-        if (data == SESSION_NOT_FOUND) cout << "Error: Session could not be found" << endl;
-        
-        else cout << "User is already in session: '" << data << "'" << endl;
-        
+        cout << "Error: " << data << endl;
         return false;
     }
-    
     else if(response == JN_ACK)
     {
-        cout << "Session '" << data << "' joined" << endl;
+        cout << "Session '" << data << "' joined!" << endl;
         return true;
+    }
+    else
+    {
+        cout << "Unknown message type received" << endl;
+        return false;
     }
 }
 
+
+// Asks server to remove it from the current session and checks server's response
+// Returns true if session is exited
 bool requestLeaveSession()
 {
     char buffer[MAXDATASIZE];
     int numBytes, response;
-    struct message joinSession;
-    joinSession.type = LEAVE_SESS;
-    joinSession.size = 0;
-    joinSession.source = login.clientID;
-    joinSession.data = "";
+    struct message leaveSession;
+    leaveSession.type = LEAVE_SESS;
+    leaveSession.size = 0;
+    leaveSession.source = login.clientID;
+    leaveSession.data = "";
     
     // Sends login request to server
-    if(!sendToServer(&joinSession)){
+    if(!sendToServer(&leaveSession)){
         return false;
     }
     
@@ -243,19 +253,24 @@ bool requestLeaveSession()
     
     string s(buffer), temp, data;
     stringstream ss(s);
-    ss >> response >> temp >> temp >> data;
+    ss >> response >> temp >> temp;
+    getline(ss, data); // Get the rest of stream into data
     
     if (response == LS_NAK)
     {
-        cout << "Error: User is not currently in a session" << endl;
+        cout << "Error: " << data << endl;
         return false;
     }
     else if (response == LS_ACK)
     {
-        cout << "User has left the session '" << data << "'" << endl;
+        cout << "Exited session '" << data << "'!" << endl;
         return true;
     }
-    
+    else
+    {
+        cout << "Unknown message type received" << endl;
+        return false;
+    }
 }
 
 
@@ -286,18 +301,24 @@ bool requestNewSession(string sessionID)
     // Checking packet type
     string s(buffer), temp, data;
     stringstream ss(s);
-    ss >> response >> temp >> temp >> data;
+    ss >> response >> temp >> temp;
+    getline(ss, data); // Get the rest of stream into data
 
-    if(response == NS_NACK) 
+    if(response == NS_NAK) 
     {
-        cout << "Error: Session '" << data << "' could not be created" << endl;
+        cout << "Error: " << data << endl;
         return false;
     }
     
     else if(response == NS_ACK)
     {
-        cout << "Session '" << data << "' created" << endl;
+        cout << "Session '" << data << "' created!" << endl;
         return true;
+    }
+    else
+    {
+        cout << "Unknown message type received" << endl;
+        return false;
     }
 }
 
@@ -476,92 +497,96 @@ int main(int argc, char** argv)
                 // Create connection and get file descriptor
                 sockfd = createConnection();
 
-                if(sockfd != -1)
-                { 
-                    if(requestLogin(login))
-                    {
-                        cout<< "Login successful!"<<endl;
-                        loggedIn = true;
-                    }
-
-                }
+                // If connection created and login info sent successfully
+                if(sockfd != -1 && requestLogin(login)) loggedIn = true;
             }
             else cout << "Already logged in!" << endl;
             
         }
         else if(command == CMD_LOGOUT)
         {
-            if(loggedIn)
+            if(inSession)
+            {
+                cout << "Please leave the session before logging out!" << endl;
+            }
+            else if(loggedIn)
             {
                 logout();
-                close(sockfd);
-                cout << "Closing connection" << endl;
                 loggedIn = false;
+                
+                cout << "Closing connection" << endl;
+                close(sockfd);
             }
-            else cout << "Please login." << endl;
+            else cout << "Please login" << endl;
         }
         else if(command == CMD_QUIT)
         {
-            if(loggedIn)
+            if(inSession)
+            {
+                cout << "Please leave the session before quitting!" << endl;
+            }
+            else if(loggedIn)
             {
                 logout();
-                close(sockfd);
-                cout << "Closing connection" << endl;
                 loggedIn = false;
+                
+                cout << "Closing connection" << endl;
+                close(sockfd);
             }
-            exit(1);
+            else exit(1);
         }
-        else if(!loggedIn)
+        else if(!loggedIn) // Cannot enter any other command before logging in
         {
-            cout << "Please login." << endl;
+            cout << "Please login" << endl;
         }
         else if (command == CMD_JOINSESS)
         {
             string sessionID;
             ss >> sessionID;
-            if(requestJoinSession(sessionID) == true)
+            if(requestJoinSession(sessionID))
             {
-                // Go into a session loop
-            }
-            else
-            {
-                
+                inSession = true;
             }
         }
         else if (command == CMD_LEAVESESS)
         {
-            if (requestLeaveSession() == true){
-                
-            }
-            else
+            if(requestLeaveSession())
             {
-                
+                inSession = false;
             }
         }
         else if (command == CMD_CREATESESS)
         {
             string sessionID;
             ss >> sessionID;
-            if(requestNewSession(sessionID) == true)
+            if(requestNewSession(sessionID))
             {
-                // Go into a session loop
-            }
-            else
-            {
-
+                inSession = true;
             }
         }
         else if (command == CMD_LIST)
         {
-            cout<<"list"<<endl;
-            auto res = requestClientSessionList();
-            if(res.first == true) printClientSessionList(res.second);
-            
-            
+            if(inSession)
+            {
+                cout << "Please leave the session before listing connected "
+                        "clients and available sessions!" << endl;
+            }
+            else
+            {
+                auto res = requestClientSessionList();
+                if(res.first == true) printClientSessionList(res.second);
+            }
         }
         else
         {
-            cout << "Unknown command" << endl;
+            if(!inSession)
+            {
+                cout << "Unknown command" << endl;
+            }
+            else
+            {
+                // Send the message to the current session
+            }
         }
         
         cout << endl;
