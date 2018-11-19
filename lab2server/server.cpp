@@ -142,7 +142,7 @@ int createListenerSocket(const char* portNum)
 
 // Create a packet string from a message structure
 string stringifyMessage(const struct message* data)
-{
+{   
     string dataStr = to_string(data->type) + " " + to_string(data->size) 
                      + " " + data->source + " " + data->data;
     return dataStr;
@@ -185,8 +185,8 @@ bool sendToClient(struct message *data, int sockfd)
     int numBytes;
     string dataStr = stringifyMessage(data);
 
-    if(sizeof(dataStr) > MAXDATASIZE) return false;
-    if((numBytes = send(sockfd, dataStr.c_str(), sizeof(dataStr), 0)) == -1)
+    if(dataStr.length() + 1 > MAXDATASIZE) return false;
+    if((numBytes = send(sockfd, dataStr.c_str(), dataStr.length() + 1, 0)) == -1)
     {
         perror("send");
         return false;
@@ -253,7 +253,9 @@ bool joinSession (int sockfd, string sessionID)
     string currentSessionID = clientSockfdToSessionID(sockfd);
     
     // Checking that session exists and client is not already in a session
-    if (session != sessionList.end() && currentSessionID == SESSION_NOT_FOUND)
+    if (sessionID != ACK_DATA &&
+        currentSessionID == SESSION_NOT_FOUND &&
+        session != sessionList.end())
     {        
         // Add client to the session
         session->second.insert(sockfd);
@@ -272,7 +274,8 @@ bool joinSession (int sockfd, string sessionID)
     {
         ack.type = JN_NAK;
         
-        if(currentSessionID != SESSION_NOT_FOUND) ack.data = "Already in a session!";
+        if (sessionID == ACK_DATA) ack.data = "No session ID was provided!";
+        else if(currentSessionID != SESSION_NOT_FOUND) ack.data = "Already in a session!";
         else ack.data = "Session not found!";
 
         ack.size = ack.data.length() + 1;
@@ -355,6 +358,16 @@ bool createSession(int sockfd, string sessionID)
         sendToClient(&ack, sockfd);
         return false;
     }
+    else if (sessionID == ACK_DATA)
+    {
+        ack.type = NS_NAK;
+        ack.data = "No session ID was provided!";
+        ack.size = ack.data.length() + 1;
+        
+        sendToClient(&ack, sockfd);
+        return false;  
+    }
+    
     else
     {
         ack.type = NS_ACK;
@@ -458,7 +471,7 @@ int main(int argc, char** argv)
                     int nbytes;
                     char buf[MAXDATASIZE];
 
-                    if ((nbytes = recv(i, buf, sizeof(buf), 0)) <= 0)
+                    if ((nbytes = recv(i, buf, MAXDATASIZE, 0)) <= 0)
                     {
                         // Got error or connection closed by client
                         if (nbytes == 0) // Connection closed

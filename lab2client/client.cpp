@@ -127,8 +127,8 @@ bool sendToServer(struct message *data)
     int numBytes;
     string dataStr = stringifyMessage(data);
 
-    if(sizeof(dataStr) > MAXDATASIZE) return false;
-    if((numBytes = send(sockfd, dataStr.c_str(), sizeof(dataStr), 0)) == -1)
+    if(dataStr.length() + 1 > MAXDATASIZE) return false;
+    if((numBytes = send(sockfd, dataStr.c_str(), dataStr.length() + 1, 0)) == -1)
     {
         perror("send");
         return false;
@@ -145,7 +145,7 @@ bool requestLogin(struct connectionDetails login)
     int numBytes, response;
     struct message info;
     info.type = LOGIN;
-    info.size = sizeof(login.clientPassword);
+    info.size = login.clientPassword.length() + 1;
     info.source = login.clientID;
     info.data = login.clientPassword;
         
@@ -187,7 +187,7 @@ bool requestJoinSession(string sessionID)
     int numBytes, response;
     struct message joinSession;
     joinSession.type = JOIN;
-    joinSession.size = sizeof(sessionID);
+    joinSession.size = sessionID.length() + 1;
     joinSession.source = login.clientID;
     joinSession.data = sessionID;
     
@@ -202,8 +202,6 @@ bool requestJoinSession(string sessionID)
         perror("recv");
         return false;
     }
-    
-    cout << buffer << endl;
     
     // Checking packet type
     string s(buffer), temp, data;
@@ -286,7 +284,7 @@ bool requestNewSession(string sessionID)
     int numBytes, response;
     struct message newSession;
     newSession.type = NEW_SESS;
-    newSession.size = sizeof(sessionID);
+    newSession.size = sessionID.length() + 1;
     newSession.source = login.clientID;
     newSession.data = sessionID;
     
@@ -301,9 +299,7 @@ bool requestNewSession(string sessionID)
         perror("recv");
         return false;
     }
-    
-    cout << buffer << endl;
-    
+        
     // Checking packet type
     string s(buffer), temp, data;
     stringstream ss(s);
