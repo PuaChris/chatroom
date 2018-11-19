@@ -203,12 +203,14 @@ bool requestJoinSession(string sessionID)
         return false;
     }
     
+    cout << buffer << endl;
+    
     // Checking packet type
     string s(buffer), temp, data;
     stringstream ss(s);
     ss >> response >> temp >> temp;
     getline(ss, data); // Get the rest of stream into data
-
+    
     if(response == JN_NAK) 
     {
         cout << "Error: " << data << endl;
@@ -250,6 +252,8 @@ bool requestLeaveSession()
         perror("recv");
         return false;
     }
+    
+    cout << buffer << endl;
     
     string s(buffer), temp, data;
     stringstream ss(s);
@@ -297,6 +301,8 @@ bool requestNewSession(string sessionID)
         perror("recv");
         return false;
     }
+    
+    cout << buffer << endl;
     
     // Checking packet type
     string s(buffer), temp, data;

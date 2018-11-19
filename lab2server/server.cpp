@@ -261,7 +261,7 @@ bool joinSession (int sockfd, string sessionID)
         // Send response with the data as the sessionID
         ack.type = JN_ACK;
         ack.data = sessionID;
-        ack.size = sizeof(ack.data);
+        ack.size = ack.data.length() + 1;
         
         sendToClient(&ack, sockfd);
         return true;
@@ -274,10 +274,8 @@ bool joinSession (int sockfd, string sessionID)
         
         if(currentSessionID != SESSION_NOT_FOUND) ack.data = "Already in a session!";
         else ack.data = "Session not found!";
-        
-        cout << ack.data << endl;
-                
-        ack.size = sizeof(ack.data);
+
+        ack.size = ack.data.length() + 1;
         
         sendToClient(&ack, sockfd);
         return false;
@@ -309,7 +307,7 @@ bool leaveSession (int sockfd)
         
         ack.type = LS_ACK;
         ack.data = currentSessionID;
-        ack.size = sizeof(ack.data);
+        ack.size = ack.data.length() + 1;
 
         sendToClient(&ack, sockfd);
         return true;
@@ -318,7 +316,7 @@ bool leaveSession (int sockfd)
     {
         ack.type = LS_NAK;
         ack.data = "Not in a session!";
-        ack.size = sizeof(ack.data);
+        ack.size = ack.data.length() + 1;
         
         sendToClient(&ack, sockfd);
         return false;
@@ -336,15 +334,23 @@ bool createSession(int sockfd, string sessionID)
     struct message ack;
     ack.source = "SERVER";
     
+    if(clientSockfdToSessionID(sockfd) != SESSION_NOT_FOUND)
+    {
+        ack.type = NS_NAK;
+        ack.data = "Already in a session!";
+        ack.size = ack.data.length() + 1;
+        
+        sendToClient(&ack, sockfd);
+        return false;
+    }
+    
     // Insert returns a pair describing if the insertion was successful
     auto res = sessionList.insert(make_pair(sessionID, unordered_set<int>({sockfd})));
     if(res.second == false)
     {
         ack.type = NS_NAK;
         ack.data = "Session already exists!";
-        ack.size = sizeof(ack.data);
-        
-        cout << ack.data << endl;
+        ack.size = ack.data.length() + 1;
         
         sendToClient(&ack, sockfd);
         return false;
@@ -353,7 +359,7 @@ bool createSession(int sockfd, string sessionID)
     {
         ack.type = NS_ACK;
         ack.data = sessionID;
-        ack.size = sizeof(ack.data);
+        ack.size = ack.data.length() + 1;
         
         sendToClient(&ack, sockfd);
         return true;
