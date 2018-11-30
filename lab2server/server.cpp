@@ -49,7 +49,10 @@ enum msgType {
     NS_NAK,
     MESSAGE,
     QUERY,
-    QU_ACK
+    QU_ACK,
+    DIRMESSAGE,
+    DMESS_ACK,
+    DMESS_NAK
 };
 
 
@@ -460,6 +463,47 @@ void createList(int sockfd)
 }
 
 
+// Sends a direct message to a client specified in the data of the given packet
+// If the client doesn't exist, inform sender
+// Returns true if message sent successfully
+bool sendDirectMessage(struct message packet, int senderfd)
+{
+    struct message dirMessAck;
+    dirMessAck.source = "SERVER";
+    
+    stringstream ss(packet.data);
+    string receiverID, message;
+    ss >> receiverID;
+    
+    for(auto const & client : clientList)
+    {
+        if(client.second.first == receiverID)
+        {
+            // Send message to receiver
+            getline(ss, message);
+            message.erase(0, 1); // Remove extra space
+            packet.data = message;
+            sendToClient(&packet, client.first);
+            
+            // Tell sender the message was delivered
+            dirMessAck.type = DMESS_ACK;
+            dirMessAck.data = receiverID;
+            dirMessAck.size = dirMessAck.data.length() + 1;
+            sendToClient(&dirMessAck, senderfd);
+            
+            return true;
+        }
+    }
+    
+    // Inform sender the user does not exist
+    dirMessAck.type = DMESS_NAK;
+    dirMessAck.data = "User '" + receiverID + "' does not exist!";
+    dirMessAck.size = dirMessAck.data.length() + 1;
+    sendToClient(&dirMessAck, senderfd);
+    
+    return false;
+}
+
 int main(int argc, char** argv)
 {
     fd_set master;    // Master file descriptor list
@@ -619,6 +663,17 @@ int main(int argc, char** argv)
                                 
                                 cout << "Message sent to session '" << sessionID << "'" << endl;
                                 break;
+                            }
+                            case DIRMESSAGE:
+                            {
+                                if(!sendDirectMessage(packet, i))
+                                {
+                                    cout << "Direct message not sent" << endl;
+                                }
+                                else
+                                {
+                                    cout << "Direct message sent" << endl;
+                                }
                             }
                             case QUERY:
                                 createList(i);

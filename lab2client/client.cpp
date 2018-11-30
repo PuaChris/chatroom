@@ -531,7 +531,6 @@ bool sendDirectMessage(string receiverID, string message)
     string s(buffer), temp, data;
     stringstream ss(s);
     ss >> response >> temp >> temp >> data;
-
     
     if (response == DMESS_NAK)
     {
@@ -606,15 +605,18 @@ int main(int argc, char** argv)
                     }
                     else // Received data
                     {
-                        string received(buf), temp, source, message;
+                        string received(buf), size, source, message;
+                        int type;
                         stringstream ss(received);
-                        ss >> temp >> temp >> source;
+                        ss >> type >> size >> source;
                         
                         getline(ss, message);
                         message.erase(0, 1); // Remove extra space from getline
 
-                        cout << source << ": " << message << endl;
-                        //cout.flush();
+                        if(type == MESSAGE)
+                            cout << source << ": " << message << endl;
+                        else if(type == DIRMESSAGE)
+                            cout << source << "(DM): " << message << endl;
                     }
                 }
                 else // Only 2 descriptors in set, so this is stdin
