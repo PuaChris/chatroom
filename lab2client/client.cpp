@@ -39,6 +39,7 @@
 #define CMD_JOINSESS   "/joinsession"
 #define CMD_LEAVESESS  "/leavesession"
 #define CMD_CREATESESS "/createsession"
+#define CMD_DIRMESSAGE "/directmessage" 
 #define CMD_LIST       "/list"
 #define CMD_QUIT       "/quit"
 
@@ -66,7 +67,10 @@ enum msgType {
     NS_NAK,
     MESSAGE,
     QUERY,
-    QU_ACK
+    QU_ACK,
+    DIRMESSAGE,
+    DMESS_ACK,
+    DMESS_NAK
 };
 
 
@@ -185,6 +189,7 @@ bool requestLogin(struct connectionDetails login)
     }
 }
 
+
 // Sends the logout request to the server
 void logout()
 {
@@ -196,6 +201,7 @@ void logout()
     
     if(sendToServer(&info)) cout << "Logout successful!" << endl;
 }
+
 
 // Requests to join a session in the server and checks server's response
 // Returns true if session is joined
@@ -485,7 +491,6 @@ int createConnection()
 
 void sendMessage(string message)
 {
-    // Prepare message
     struct message sessMessage;
     sessMessage.type = MESSAGE;
     sessMessage.size = message.length() + 1;
@@ -495,11 +500,55 @@ void sendMessage(string message)
     if(!sendToServer(&sessMessage)) cout << "Message not sent!" << endl;
 }
 
+
 // Returns the number of arguments in a string
 unsigned int countNumArguments(std::string const& str)
 {
     stringstream stream(str);
     return distance(istream_iterator<string>(stream), istream_iterator<string>());
+}
+
+
+bool sendDirectMessage(string clientID, string message)
+{
+    char buffer[MAXDATASIZE];
+    int numBytes, response;
+    struct message dirMessage;
+    dirMessage.type = DIRMESSAGE;
+    dirMessage.source = login.clientID;
+    dirMessage.data = clientID + " " + message;
+    dirMessage.size = dirMessage.data.length() + 1;
+    
+    if(!sendToServer(&dirMessage)) cout << "Message not sent!" << endl;
+    
+    // Server response
+    if((numBytes = recv(sockfd, buffer, MAXDATASIZE, 0)) == -1)
+    {
+        perror("recv");
+        return false;
+    }
+        
+    string s(buffer), temp, data;
+    stringstream ss(s);
+    ss >> response >> temp >> temp >> data;
+
+    
+    if (response == DMESS_NAK)
+    {
+        // Get the rest of the error message
+        string restOfData;
+        getline(ss, restOfData);
+        data += restOfData;
+        
+        cout << "Error: " << data << endl;
+        return false;
+    }
+    else if (response == DMESS_ACK) return true;
+    else
+    {
+        cout << "directmessage: unknown message type received" << endl;
+        return false;
+    }
 }
 
 int main(int argc, char** argv)
@@ -577,7 +626,7 @@ int main(int argc, char** argv)
 
                     ss >> command;
 
-                    if (command == CMD_LOGIN)
+                    if(command == CMD_LOGIN)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
                         if(numArguments != 4) cout << "Incorrect number of arguments!" << endl;
@@ -652,7 +701,7 @@ int main(int argc, char** argv)
                         cout << "Please login" << endl;
                         cout << endl;
                     }
-                    else if (command == CMD_JOINSESS)
+                    else if(command == CMD_JOINSESS)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
                         if(numArguments != 1) cout << "Incorrect number of arguments!" << endl;
@@ -667,7 +716,7 @@ int main(int argc, char** argv)
                         }
                         cout << endl;
                     }
-                    else if (command == CMD_LEAVESESS)
+                    else if(command == CMD_LEAVESESS)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
                         if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
@@ -692,7 +741,7 @@ int main(int argc, char** argv)
                         }
                         cout << endl;
                     }
-                    else if (command == CMD_LIST)
+                    else if(command == CMD_LIST)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
                         if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
@@ -705,6 +754,42 @@ int main(int argc, char** argv)
                         {
                             auto res = requestClientSessionList();
                             if(res.first == true) printClientSessionList(res.second);
+                        }
+                        cout << endl;
+                    }
+                    else if(command == CMD_DIRMESSAGE)
+                    {
+                        unsigned int numArguments = countNumArguments(input) - 1;
+                        if(numArguments == 0) cout << "Incorrect number of arguments!" << endl;
+                        else
+                        {
+                            string receiverID, message; 
+                            ss >> receiverID; // Client ID receiving the message
+                            getline(ss, message);
+                            
+                            // Find the quotations that denote the message
+                            size_t startOfMessage = message.find_first_of("\"");
+                            size_t endOfMessage = message.find_last_of("\"");
+                           
+                            // Error checking on the message structure
+                            if(startOfMessage == string::npos || endOfMessage == string::npos)
+                            {
+                                cout << "Please put your message within double quotation marks!" << endl;
+                            }
+                            else if(endOfMessage - startOfMessage == 1)
+                            {
+                                cout << "Cannot send empty message!" << endl;
+                            }
+                            else if(message.substr(endOfMessage+1).find_first_not_of("\n\t\r ") != string::npos)
+                            {
+                                cout << "Please don't enter characters after the message!" << endl;
+                            }
+                            else
+                            {
+                                // Message is valid, try to send it to the other client
+                                message = message.substr(startOfMessage + 1, endOfMessage - startOfMessage - 1);
+                                sendDirectMessage(receiverID, message);
+                            }
                         }
                         cout << endl;
                     }
