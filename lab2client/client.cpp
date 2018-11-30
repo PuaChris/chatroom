@@ -509,14 +509,14 @@ unsigned int countNumArguments(std::string const& str)
 }
 
 
-bool sendDirectMessage(string clientID, string message)
+bool sendDirectMessage(string receiverID, string message)
 {
     char buffer[MAXDATASIZE];
     int numBytes, response;
     struct message dirMessage;
     dirMessage.type = DIRMESSAGE;
     dirMessage.source = login.clientID;
-    dirMessage.data = clientID + " " + message;
+    dirMessage.data = receiverID + " " + message;
     dirMessage.size = dirMessage.data.length() + 1;
     
     if(!sendToServer(&dirMessage)) cout << "Message not sent!" << endl;
@@ -786,7 +786,7 @@ int main(int argc, char** argv)
                             }
                             else
                             {
-                                // Message is valid, try to send it to the other client
+                                // Message is valid, remove quotes and try sending to receiving client
                                 message = message.substr(startOfMessage + 1, endOfMessage - startOfMessage - 1);
                                 sendDirectMessage(receiverID, message);
                             }
