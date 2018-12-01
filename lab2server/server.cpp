@@ -79,6 +79,9 @@ unordered_map<int, pair<string, string>> clientList;
 // connected to the session
 unordered_map<string, unordered_set<int>> sessionList;
 
+// Key is session name, value is set to the be the password set by the client
+// making the session
+unordered_map<string, string> sessionPasswordList;
 
 // Get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
@@ -287,17 +290,30 @@ bool loginClient(int sockfd)
 
 }
 
+// Checks if the password corresponds with the session being attempted to join
+bool checkSessionPassword (string sessionID, string sessionPassword)
+{
+    auto currentSession = sessionPasswordList.find(sessionID);
+
+    if (currentSession -> second == sessionPassword) return true;
+    else return false; 
+
+}
 
 // Adds client to the specified session
 // If the session exists and they aren't already in a session, it sends back the
 // session they were added to
 // Otherwise, it sends back the reason they couldn't be added to the specified session
 // Returns true if successful
-bool joinSession (int sockfd, string sessionID)
+bool joinSession (int sockfd, string sessionData)
 {
     struct message ack;
     ack.source = "SERVER";
-\
+
+    string sessionID, sessionPassword;  
+    stringstream ss(sessionData);
+    ss >> sessionID >> sessionPassword;
+    
     // Find list of clients connected to the given session name
     auto session = sessionList.find(sessionID);
     
@@ -307,18 +323,21 @@ bool joinSession (int sockfd, string sessionID)
     // Checking that session exists and client is not already in a session
     if (sessionID != ACK_DATA &&
         currentSessionID == SESSION_NOT_FOUND &&
-        session != sessionList.end())
+        session != sessionList.end() && 
+        checkSessionPassword(sessionID, sessionPassword))
     {        
+        
         // Add client to the session
         session->second.insert(sockfd);
-        
+
         // Send response with the data as the sessionID
         ack.type = JN_ACK;
         ack.data = sessionID;
         ack.size = ack.data.length() + 1;
-        
+
         sendToClient(&ack, sockfd);
         return true;
+        
     }
     
     // Session does not exist or client is already in a session
@@ -328,7 +347,9 @@ bool joinSession (int sockfd, string sessionID)
         
         if (sessionID == ACK_DATA) ack.data = "No session ID was provided!";
         else if(currentSessionID != SESSION_NOT_FOUND) ack.data = "Already in a session!";
-        else ack.data = "Session not found!";
+        else if (session == sessionList.end()) ack.data = "Session not found!";
+        else if (checkSessionPassword(sessionID, sessionPassword) == false) ack.data = "Password is incorrect!";
+
 
         ack.size = ack.data.length() + 1;
         
@@ -355,9 +376,12 @@ bool leaveSession (int sockfd)
         // Remove client from session
         auto currentSession = sessionList.find(currentSessionID);
         currentSession->second.erase(sockfd);
-        if(currentSession->second.empty()) // No more clients in the session
+        
+        // No more clients in the session
+        if(currentSession->second.empty()) 
         {
             sessionList.erase(currentSessionID);
+            sessionPasswordList.erase(currentSessionID);
         }
         
         ack.type = LS_ACK;
@@ -384,7 +408,7 @@ bool leaveSession (int sockfd)
 // sends back the sessionID
 // Otherwise, it sends back the reason why it couldn't be created
 // Returns true if successful
-bool createSession(int sockfd, string sessionID)
+bool createSession(int sockfd, string sessionData)
 {   
     struct message ack;
     ack.source = "SERVER";
@@ -398,6 +422,11 @@ bool createSession(int sockfd, string sessionID)
         sendToClient(&ack, sockfd);
         return false;
     }
+    
+    string sessionID, sessionPassword;
+    stringstream ss(sessionData);
+    
+    ss >> sessionID >> sessionPassword;
     
     // Insert returns a pair describing if the insertion was successful
     auto res = sessionList.insert(make_pair(sessionID, unordered_set<int>({sockfd})));
@@ -422,6 +451,9 @@ bool createSession(int sockfd, string sessionID)
     
     else
     {
+        // Recording password of the created session list
+        sessionPasswordList.insert(make_pair(sessionID, sessionPassword));
+        
         ack.type = NS_ACK;
         ack.data = sessionID;
         ack.size = ack.data.length() + 1;
@@ -602,20 +634,26 @@ int main(int argc, char** argv)
                     
                     else // We got some data from a client
                     {
+
                         struct message packet = messageFromPacket(buf);
+                        string sessionID;
+                        stringstream ss(packet.data);
                         
                         switch(packet.type)
                         {
                             case JOIN:
+                                
+                                ss >> sessionID;
+                                
                                 if(joinSession(i, packet.data))
                                 {
                                     cout << "Client '" << packet.source << "' joined session '" 
-                                         << packet.data  << "'" << endl;
+                                         << sessionID  << "'" << endl;
                                 }
                                 else
                                 {
                                     cout << "Client '" << packet.source << "' could not join session '" 
-                                         << packet.data << "'" << endl;
+                                         << sessionID << "'" << endl;
                                 }
                                 break;
                                 
@@ -634,14 +672,17 @@ int main(int argc, char** argv)
                                 break;
                                 
                             case NEW_SESS:
+                                
+                                ss >> sessionID;
+                                
                                 if(createSession(i, packet.data))
                                 {
-                                    cout << "New session '" << packet.data << "' created for client "
+                                    cout << "New session '" << sessionID << "' created for client "
                                          << packet.source << endl;
                                 }
                                 else
                                 {
-                                    cout << "Session '" << packet.data << "' cannot be created" 
+                                    cout << "Session '" << sessionID << "' cannot be created" 
                                          << endl;
                                 }     
                                 break;

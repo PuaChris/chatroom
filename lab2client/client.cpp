@@ -205,7 +205,7 @@ void logout()
 
 // Requests to join a session in the server and checks server's response
 // Returns true if session is joined
-bool requestJoinSession(string sessionID)
+bool requestJoinSession(string sessionID, string sessionPassword)
 {
     char buffer[MAXDATASIZE];
     int numBytes, response;
@@ -213,7 +213,7 @@ bool requestJoinSession(string sessionID)
     joinSession.type = JOIN;
     joinSession.size = sessionID.length() + 1;
     joinSession.source = login.clientID;
-    joinSession.data = sessionID;
+    joinSession.data = sessionID + " " + sessionPassword;
     
     // Sends login request to server
     if(!sendToServer(&joinSession)){
@@ -309,7 +309,7 @@ bool requestLeaveSession()
 
 // Requests to make a new session and checks the server's response
 // Returns true if session was successfully created
-bool requestNewSession(string sessionID)
+bool requestNewSession(string sessionID, string sessionPassword)
 {
     char buffer[MAXDATASIZE];
     int numBytes, response;
@@ -317,7 +317,7 @@ bool requestNewSession(string sessionID)
     newSession.type = NEW_SESS;
     newSession.size = sessionID.length() + 1;
     newSession.source = login.clientID;
-    newSession.data = sessionID;
+    newSession.data = sessionID + " " + sessionPassword;
     
     // Sends login request to server
     if(!sendToServer(&newSession)){
@@ -706,12 +706,12 @@ int main(int argc, char** argv)
                     else if(command == CMD_JOINSESS)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments != 1) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments != 2) cout << "Incorrect number of arguments!" << endl;
                         else
                         {
-                            string sessionID;
-                            ss >> sessionID;
-                            if(requestJoinSession(sessionID))
+                            string sessionID, sessionPassword;
+                            ss >> sessionID >> sessionPassword;
+                            if(requestJoinSession(sessionID, sessionPassword))
                             {
                                 inSession = true;
                             }
@@ -731,12 +731,12 @@ int main(int argc, char** argv)
                     else if (command == CMD_CREATESESS)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments != 1) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments != 2) cout << "Incorrect number of arguments!" << endl;
                         else
                         {
-                            string sessionID;
-                            ss >> sessionID;
-                            if(requestNewSession(sessionID))
+                            string sessionID, sessionPassword;
+                            ss >> sessionID >> sessionPassword;
+                            if(requestNewSession(sessionID, sessionPassword))
                             {
                                 inSession = true;
                             }
