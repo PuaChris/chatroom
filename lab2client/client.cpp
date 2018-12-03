@@ -5,18 +5,6 @@
  * Created on November 12, 2018, 8:46 PM
  */
 
-
-/* TODO
- *
- * - Disconnect clients when server closes
- * - Double logging in
- * - Parsing issues (e.g. incorrect number of arguments)
- * - Case where user inputs multiple words for a session name
- * - Case where user can create multiple sessions and is also in all of them at the same time
- * - Note: when no one is in a session, the session still remains on the server side. 
- *         Possibly have to delete that empty session
- */
-
 #include <cstdlib>
 #include <string>
 #include <sstream>

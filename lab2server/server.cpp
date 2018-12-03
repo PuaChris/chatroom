@@ -696,6 +696,8 @@ int main(int argc, char** argv)
                                     session = sessionList.find(sessionID)->second;
                                 }
                                 
+                                packet.data.erase(0, 1); // Remove extra space
+                                
                                 // Send message to all clients in the session (excluding the sender)
                                 for(auto const & clientSockfd : session)
                                 {

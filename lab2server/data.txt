@@ -1,3 +1,0 @@
-sam password
-john 1975
-tom 2915
