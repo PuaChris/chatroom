@@ -511,6 +511,17 @@ bool sendDirectMessage(struct message packet, int senderfd)
     {
         if(client.second.first == receiverID)
         {
+            // Don't send to yourself
+            if(client.first == senderfd)
+            {
+                dirMessAck.type = DMESS_NAK;
+                dirMessAck.data = "Can't send message to yourself!";
+                dirMessAck.size = dirMessAck.data.length() + 1;
+                sendToClient(&dirMessAck, senderfd);
+                
+                return false;
+            }
+            
             // Send message to receiver
             getline(ss, message);
             message.erase(0, 1); // Remove extra space
@@ -550,6 +561,8 @@ int main(int argc, char** argv)
         return 0;
     }
     int listener = createListenerSocket(argv[1]);
+    
+    cout << "Waiting for connections..." << endl;
     
     // Clear master and temp sets and add the listener socket to master
     FD_ZERO(&master);

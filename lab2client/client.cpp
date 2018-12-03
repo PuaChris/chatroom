@@ -683,7 +683,7 @@ int main(int argc, char** argv)
                             FD_CLR(sockfd, &master); // remove from master set
 
                         }
-                        else exit(1);
+                        exit(1);
                         cout << endl;
                     }
                     else if(!loggedIn) // Cannot enter any other command before logging in
