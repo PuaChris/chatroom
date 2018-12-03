@@ -27,7 +27,7 @@ The valid usernames and passwords are hardcoded in the server source code.
 
 ## Extra Features
 
-###Direct Messaging
+### Direct Messaging
 
 Clients are able to send private messages to other clients whether or not they are inside a chat session for privacy purposes. To send a direct message, type in the terminal:
 
@@ -35,7 +35,7 @@ Clients are able to send private messages to other clients whether or not they a
 /directmessage <user> "message"
 ```
 
-###Session Password Protection
+### Session Password Protection
 
 Creating and joining a session requires a password for privacy and security purposes. To create a password-protected session, type in the terminal:
 
