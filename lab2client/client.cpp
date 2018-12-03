@@ -471,7 +471,7 @@ int createConnection()
     //Retrieves IP address from the server that is currently being connected to
     inet_ntop(p->ai_family, get_in_addr((struct sockaddr *) p->ai_addr),
             s, sizeof s);
-    printf("client: connecting to %s\n", s);
+    printf("Trying to connect to server at %s\n", s);
 
     return newSockFD;
 }

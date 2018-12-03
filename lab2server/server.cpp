@@ -218,17 +218,24 @@ void acknowledgeLogin(int sockfd)
 
 // Checks if the user can login to the server
 // If not, string returned is reason for error
-pair<bool, string> canUserConnect(string userID)
+pair<bool, string> canUserConnect(string userID, string password)
 {
     // Checks if the user is on the list of permitted clients
-    if (permittedClientList.find(userID) != permittedClientList.end())
+    if(permittedClientList.find(userID) != permittedClientList.end())
     {
         // Checks if the user is already logged in 
         for (auto client = clientList.begin(); client != clientList.end(); client++)
         {
-            if (client -> second.first == userID){
+            if(client->second.first == userID)
+            {
                 return make_pair(false, "User is already logged in!");
             }
+        }
+        
+        // Check if password is correct
+        if(password != permittedClientList.find(userID)->second)
+        {
+            return make_pair(false, "Password is incorrect!");
         }
         return make_pair(true, ACK_DATA); 
     }
@@ -263,7 +270,7 @@ bool loginClient(int sockfd)
     }
     
     // Check if user is permitted to connect to the server
-    pair<bool, string> userConnectReq = canUserConnect(loginInfo.source);
+    pair<bool, string> userConnectReq = canUserConnect(loginInfo.source, loginInfo.data);
     if (userConnectReq.first == false)
     {
         // Send back reason for error
@@ -286,8 +293,6 @@ bool loginClient(int sockfd)
         sendToClient(&ack, sockfd);
         return true;
     }
-    
-
 }
 
 // Checks if the password corresponds with the session being attempted to join
@@ -609,6 +614,7 @@ int main(int argc, char** argv)
                         }
                         else
                         {
+                            cout << "Attempted connection failed" << endl;
                             close(newfd);
                         }
                     }             
