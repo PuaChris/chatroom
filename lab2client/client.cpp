@@ -619,7 +619,10 @@ int main(int argc, char** argv)
                     if(command == CMD_LOGIN)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments != 4) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments != 4)
+                        {
+                            cout << "Usage: /login <username> <password> <server IP> <server port>" << endl;
+                        }
                         else if(!loggedIn)
                         {
                             // Get login information
@@ -648,7 +651,10 @@ int main(int argc, char** argv)
                     else if(command == CMD_LOGOUT)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments != 0)
+                        {
+                            cout << "Usage: /logout" << endl;
+                        }
                         else if(inSession)
                         {
                             cout << "Please leave the session before logging out!" << endl;
@@ -668,7 +674,10 @@ int main(int argc, char** argv)
                     else if(command == CMD_QUIT)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments != 0)
+                        {
+                            cout << "Usage: /quit" << endl;
+                        }
                         else if(inSession)
                         {
                             cout << "Please leave the session before quitting!" << endl;
@@ -694,7 +703,10 @@ int main(int argc, char** argv)
                     else if(command == CMD_JOINSESS)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments != 2) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments != 2)
+                        {
+                            cout << "Usage: /joinsession <name> <password>" << endl;
+                        }
                         else
                         {
                             string sessionID, sessionPassword;
@@ -709,7 +721,10 @@ int main(int argc, char** argv)
                     else if(command == CMD_LEAVESESS)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments != 0)
+                        {
+                            cout << "Usage: /leavesession" << endl;
+                        }
                         else if(requestLeaveSession())
                         {
                             inSession = false;
@@ -719,7 +734,10 @@ int main(int argc, char** argv)
                     else if (command == CMD_CREATESESS)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments != 2) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments != 2)
+                        {
+                            cout << "Usage: /createsession <name> <password>" << endl;
+                        }
                         else
                         {
                             string sessionID, sessionPassword;
@@ -734,7 +752,10 @@ int main(int argc, char** argv)
                     else if(command == CMD_LIST)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments != 0) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments != 0)
+                        {
+                            cout << "Usage: /list" << endl;
+                        }
                         else if(inSession)
                         {
                             cout << "Please leave the session before listing connected "
@@ -750,7 +771,10 @@ int main(int argc, char** argv)
                     else if(command == CMD_DIRMESSAGE)
                     {
                         unsigned int numArguments = countNumArguments(input) - 1;
-                        if(numArguments == 0) cout << "Incorrect number of arguments!" << endl;
+                        if(numArguments == 0)
+                        {
+                            cout << "Usage: /directmessage <user> \"message\"" << endl;
+                        }
                         else
                         {
                             string receiverID, message; 
@@ -762,7 +786,7 @@ int main(int argc, char** argv)
                             size_t endOfMessage = message.find_last_of("\"");
                            
                             // Error checking on the message structure
-                            if(startOfMessage == string::npos || endOfMessage == string::npos)
+                            if(startOfMessage == string::npos || endOfMessage == string::npos || startOfMessage == endOfMessage)
                             {
                                 cout << "Please put your message within double quotation marks!" << endl;
                             }
