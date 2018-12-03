@@ -64,12 +64,14 @@ struct message {
     string data;
 };
 
-// Keeps a list of all users that are permitted to login. Has a boolean if 
-// user is already logged in or not
+// Keeps a list of all users that are permitted to login
 unordered_map<string, string> permittedClientList({
     {"sadman", "ahmed"},
     {"eliano", "anile"},
-    {"chris", "pua"}
+    {"chris", "pua"},
+    {"username", "password"},
+    {"hamid", "timorabadi"},
+    {"john", "smith"}
 }); 
 
 // Key is file descriptor, value is client username and password
