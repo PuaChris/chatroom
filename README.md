@@ -25,6 +25,23 @@ client
 The valid usernames and passwords are hardcoded in the server source code.
 
 
+## Available Commands
+
+The commands a user can enter are:
+
+```
+/login <client ID> <password> <server IP> <server port>
+/logout
+/joinsession <name> <password>
+/leavesession
+/createsession <name> <password>
+/directmessage <user> "message"
+/list
+/quit
+<text> // Sends text to the current session
+```
+
+
 ## Extra Features
 
 ### Direct Messaging
